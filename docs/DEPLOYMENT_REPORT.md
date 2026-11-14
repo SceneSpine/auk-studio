@@ -9,7 +9,7 @@
 | --- | --- |
 | AuK 仓库 | Tencent-Hunyuan/AuK |
 | 分支 / revision | `feat/mlx-apple-silicon` @ `6943a1e967409e8c73139a7a345f2a611cfb3dd6`（2026-09-13） |
-| 克隆方式 | 浅克隆，经 SOCKS 代理 127.0.0.1:7897（用户指定） |
+| 克隆方式 | 浅克隆，经用户自设 SOCKS 代理（GitHub 直连不稳定时） |
 | Python | 3.10.22（uv 管理，独立 `.venv-auk`） |
 | 关键依赖 | mlx 0.32.4 / torch 2.7.1 / transformers 4.57.6 / soundfile 0.14.0 / soxr 1.1.0 / fastapi 0.162.5 |
 | 依赖快照 | `config/requirements-lock.txt`（82 包） |

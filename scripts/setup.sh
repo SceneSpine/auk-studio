@@ -8,7 +8,8 @@ cd "$ROOT"
 command -v uv >/dev/null || { echo "✗ 需要 uv（brew install uv）"; exit 1; }
 
 MIRROR="${AUK_PYPI_MIRROR:-https://pypi.tuna.tsinghua.edu.cn/simple}"
-PROXY="${AUK_SOCKS_PROXY:-socks5h://127.0.0.1:7897}"
+# 代理可选：需要时自行设置 AUK_SOCKS_PROXY（如你的本地 SOCKS5 代理）；不设置则直连
+PROXY="${AUK_SOCKS_PROXY:-}"
 
 # 上游官方源码（不随本仓库分发；浅克隆，GitHub 必要时走代理）
 if [ ! -d AuK/src/auk_mlx ]; then

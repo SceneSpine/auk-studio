@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MANIFEST = os.path.join(ROOT, "config", "model_manifest.json")
 CHUNK = 64 * 1024 * 1024
-HF_PROXY = os.environ.get("HF_PROXY", "socks5h://127.0.0.1:7897")
+HF_PROXY = os.environ.get("HF_PROXY", "")  # 可选：用户自设代理；留空直连
 
 REPOS = {
     "flash": {
@@ -48,7 +48,7 @@ def log(msg: str) -> None:
 
 
 def _opener(source: str):
-    if source == "hf":
+    if source == "hf" and HF_PROXY:
         import urllib.request as u
 
         proxy = u.ProxyHandler({"https": HF_PROXY, "http": HF_PROXY})

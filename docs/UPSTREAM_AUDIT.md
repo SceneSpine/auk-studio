@@ -117,7 +117,7 @@ audio, sr = engine.generate(instruction, audio_path=wav, opts=GenerateOptions(ge
 | --- | --- |
 | M5 Pro / macOS 26.5.1 未被官方验证过 | 安装后先跑 MLX 最小测试 + 官方 demo 音频 CLI，实测通过再继续 |
 | torch 2.7 arm64 wheel 可用性 | uv 安装时验证；转换仅用 torch 读 safetensors |
-| HF 下载需代理 | HTTPS_PROXY=socks5h://127.0.0.1:7897 + PySocks；备选 ModelScope 官方渠道；下载后 sha256 校验 |
+| HF 下载需代理 | HTTPS_PROXY=<用户自设 SOCKS 代理> + PySocks；备选 ModelScope 官方渠道；下载后 sha256 校验 |
 | 内存压力（系统已有 swap 历史） | 默认 8-bit；任务串行；推理期间采样 memory_pressure |
 
 ## 10. 部署阶段回填（2026-11-14 本机实测）

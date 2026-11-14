@@ -40,10 +40,10 @@
 
 ## 网络
 
-- `github.com` git 直连不稳定（HTTP2 framing error / 连接超时）；**git 需走 SOCKS 代理 `socks5://127.0.0.1:7897`**（用户指定）。
+- `github.com` git 直连不稳定（HTTP2 framing error / 连接超时）；**git 需走 SOCKS 代理 `<你的 SOCKS 代理>`**（按需自设）。
 - `huggingface.co` API/下载直连失败，需走同一代理；备选官方渠道 ModelScope（README 列出的官方分发）。
 - `pypi.org` 直连可用。
-- 克隆方式：`git -c http.proxy=socks5://127.0.0.1:7897 clone --depth 1 --branch feat/mlx-apple-silicon ...`（完整克隆曾中断，浅克隆成功）。
+- 克隆方式：`git -c http.proxy=<你的代理> clone --depth 1 --branch feat/mlx-apple-silicon ...`（完整克隆曾中断，浅克隆成功）。
 
 ## MLX 兼容性判断
 
