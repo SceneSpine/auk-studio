@@ -1,0 +1,53 @@
+# 模型权重（体积大，单独分发）
+models/
+AuK/ckpts/*
+!AuK/ckpts/.gitkeep
+*.safetensors
+*.pt
+*.ckpt
+*.bin
+
+# 用户数据与音频
+data/
+backups/
+
+# 日志
+logs/
+*.log
+
+# 环境与密钥
+.env
+.env.*
+!.env.example
+
+# Python
+.venv-auk/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Node / 前端构建
+node_modules/
+app/frontend/dist/
+tests/ui/screenshots/
+tests/ui/package-lock.json
+
+# OS / 编辑器
+.DS_Store
+*.swp
+.idea/
+.vscode/
+# 上游官方源码（setup.sh 负责克隆，不随本仓库分发）
+AuK/
+tests/ui/screenshots-studio/
+
+# Claude Code 本地运行时
+.claude/
+app/frontend/tsconfig.tsbuildinfo
+
+# 内部开发方案（不随开源仓库分发）
+AuK-Studio-方案/
+AuK_本地部署与Web工作台开发方案.md

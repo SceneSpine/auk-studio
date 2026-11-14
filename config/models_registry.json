@@ -1,0 +1,211 @@
+{
+  "version": 1,
+  "note": "AuK Studio 模型注册表（manifest 驱动安装管理器）。sha256 以 config/model_manifest.json 为准；下载源 allowlist：ModelScope Tencent-Hunyuan/AuK-Flash、Tencent-Hunyuan/AuK、Qwen/Qwen2.5-Omni-3B 及 HF 同名仓库。converted/quantized 路径相对 models/mlx-converted/。",
+  "licenses": {
+    "mit-auk": {
+      "id": "mit-auk",
+      "name": "MIT (AuK)",
+      "url": "https://huggingface.co/tencent/AuK-Flash/blob/main/LICENSE",
+      "commercial": true,
+      "summary": "AuK 源码与权重为 MIT（明确覆盖 parameters and weights），权重本身可商用；但完整推理链依赖 Qwen Research License 编码器，系统整体仅限非商业研究/评估（docs/MODEL_LICENSES.md）。"
+    },
+    "qwen-research": {
+      "id": "qwen-research",
+      "name": "Qwen Research License",
+      "url": "https://huggingface.co/Qwen/Qwen2.5-Omni-3B/blob/main/LICENSE",
+      "commercial": false,
+      "summary": "Qwen2.5-Omni-3B 仅限非商业研究/评估用途（NON-COMMERCIAL PURPOSES ONLY）；商用须向阿里云申请授权。转换后的 Thinker 权重为其派生作品，同样受约束。再分发须随附许可与 Notice 署名。"
+    }
+  },
+  "models": [
+    {
+      "id": "auk-flash",
+      "display_name": "AuK Flash",
+      "family": "AuK",
+      "role": "main",
+      "variant": "flash",
+      "description": "4 步蒸馏快速变体，默认推荐。本机实测中文编辑 86.7%，8-bit RTF 0.5–1.0（M5 Pro/48GB）。",
+      "source": {
+        "repo": "Tencent-Hunyuan/AuK-Flash",
+        "hf_repo": "tencent/AuK-Flash",
+        "revision": "main",
+        "urls": [
+          "https://modelscope.cn/models/Tencent-Hunyuan/AuK-Flash",
+          "https://huggingface.co/tencent/AuK-Flash"
+        ]
+      },
+      "license_id": "mit-auk",
+      "raw_dir": "auk-flash",
+      "manifest_key": "tencent/AuK-Flash",
+      "required_files": ["auk_flash.safetensors", "vae.safetensors", "config.yaml", "LICENSE"],
+      "optional_files": [".gitattributes", "README.md", "assets/arch.png", "assets/performance.png"],
+      "converted_files": [
+        "vae.safetensors",
+        "dit_flash.safetensors",
+        "fusion_flash.safetensors",
+        "thinker/thinker.safetensors",
+        "thinker/thinker_config.json"
+      ],
+      "quantized_files": ["dit_flash.q8.safetensors", "thinker/thinker.q8.safetensors"],
+      "convert_steps": [
+        {
+          "kind": "vae",
+          "src": ["auk-flash", "vae.safetensors"],
+          "dst": "vae.safetensors",
+          "outputs": ["vae.safetensors"],
+          "output_gb": 0.59
+        },
+        {
+          "kind": "dit",
+          "src": ["auk-flash", "auk_flash.safetensors"],
+          "dst": "dit_flash.safetensors",
+          "outputs": ["dit_flash.safetensors", "fusion_flash.safetensors"],
+          "output_gb": 6.13
+        },
+        {
+          "kind": "thinker",
+          "src": ["qwen-thinker", ""],
+          "dst": "thinker",
+          "outputs": ["thinker/thinker.safetensors", "thinker/thinker_config.json"],
+          "output_gb": 14.9
+        }
+      ],
+      "quantize": {
+        "variant": "flash",
+        "outputs": ["dit_flash.q8.safetensors", "thinker/thinker.q8.safetensors"],
+        "output_gb": 5.96
+      },
+      "depends_on": ["qwen-thinker", "vae"],
+      "peak_memory_gb": 7.6
+    },
+    {
+      "id": "auk-base",
+      "display_name": "AuK Base",
+      "family": "AuK",
+      "role": "main",
+      "variant": "base",
+      "description": "完整 ODE 变体（默认 32 步），编辑跟随对照备选。本机实测中文编辑 76.7%，8-bit RTF ~2.0；与 Flash 共用 Thinker/VAE。",
+      "source": {
+        "repo": "Tencent-Hunyuan/AuK",
+        "hf_repo": "tencent/AuK",
+        "revision": "main",
+        "urls": [
+          "https://modelscope.cn/models/Tencent-Hunyuan/AuK",
+          "https://huggingface.co/tencent/AuK"
+        ]
+      },
+      "license_id": "mit-auk",
+      "raw_dir": "auk-base",
+      "manifest_key": "tencent/AuK",
+      "required_files": ["auk_base.safetensors", "config.yaml", "LICENSE"],
+      "optional_files": ["vae.safetensors", ".gitattributes", "README.md", "assets/arch.png", "assets/performance.png"],
+      "converted_files": ["dit_base.safetensors", "fusion_base.safetensors"],
+      "quantized_files": ["dit_base.q8.safetensors"],
+      "convert_steps": [
+        {
+          "kind": "dit",
+          "src": ["auk-base", "auk_base.safetensors"],
+          "dst": "dit_base.safetensors",
+          "outputs": ["dit_base.safetensors", "fusion_base.safetensors"],
+          "output_gb": 6.13
+        }
+      ],
+      "quantize": {
+        "variant": "base",
+        "outputs": ["dit_base.q8.safetensors"],
+        "output_gb": 1.75
+      },
+      "depends_on": ["qwen-thinker", "vae"],
+      "peak_memory_gb": 7.6
+    },
+    {
+      "id": "qwen-thinker",
+      "display_name": "Qwen2.5-Omni-3B (Thinker)",
+      "family": "Qwen",
+      "role": "dependency",
+      "variant": null,
+      "description": "语义/音频条件编码器，AuK 推理必需依赖。Qwen Research License（非商用）。q8 副本由 Flash/Base 安装的量化步骤一并生成。",
+      "source": {
+        "repo": "Qwen/Qwen2.5-Omni-3B",
+        "hf_repo": "Qwen/Qwen2.5-Omni-3B",
+        "revision": "main",
+        "urls": [
+          "https://modelscope.cn/models/Qwen/Qwen2.5-Omni-3B",
+          "https://huggingface.co/Qwen/Qwen2.5-Omni-3B"
+        ]
+      },
+      "license_id": "qwen-research",
+      "raw_dir": "qwen-thinker",
+      "manifest_key": "Qwen/Qwen2.5-Omni-3B",
+      "required_files": [
+        "model-00001-of-00003.safetensors",
+        "model-00002-of-00003.safetensors",
+        "model-00003-of-00003.safetensors",
+        "model.safetensors.index.json",
+        "config.json",
+        "generation_config.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "vocab.json",
+        "merges.txt",
+        "added_tokens.json",
+        "special_tokens_map.json",
+        "preprocessor_config.json",
+        "chat_template.json",
+        "spk_dict.pt",
+        "LICENSE"
+      ],
+      "optional_files": [".gitattributes", "README.md"],
+      "converted_files": ["thinker/thinker.safetensors", "thinker/thinker_config.json"],
+      "quantized_files": ["thinker/thinker.q8.safetensors"],
+      "convert_steps": [
+        {
+          "kind": "thinker",
+          "src": ["qwen-thinker", ""],
+          "dst": "thinker",
+          "outputs": ["thinker/thinker.safetensors", "thinker/thinker_config.json"],
+          "output_gb": 14.9
+        }
+      ],
+      "quantize": null,
+      "depends_on": [],
+      "peak_memory_gb": null
+    },
+    {
+      "id": "vae",
+      "display_name": "BigVGAN Flow VAE",
+      "family": "AuK",
+      "role": "dependency",
+      "variant": null,
+      "description": "音频潜空间编解码器，随 AuK-Flash 分发（MIT），Flash/Base 共用。原始权重位于 models/auk-flash/vae.safetensors。",
+      "source": {
+        "repo": "Tencent-Hunyuan/AuK-Flash",
+        "hf_repo": "tencent/AuK-Flash",
+        "revision": "main",
+        "urls": [
+          "https://modelscope.cn/models/Tencent-Hunyuan/AuK-Flash",
+          "https://huggingface.co/tencent/AuK-Flash"
+        ]
+      },
+      "license_id": "mit-auk",
+      "raw_dir": "auk-flash",
+      "manifest_key": "tencent/AuK-Flash",
+      "required_files": ["vae.safetensors"],
+      "optional_files": ["LICENSE"],
+      "converted_files": ["vae.safetensors"],
+      "quantized_files": [],
+      "convert_steps": [
+        {
+          "kind": "vae",
+          "src": ["auk-flash", "vae.safetensors"],
+          "dst": "vae.safetensors",
+          "outputs": ["vae.safetensors"],
+          "output_gb": 0.59
+        }
+      ],
+      "quantize": null,
+      "depends_on": [],
+      "peak_memory_gb": null
+    }
+  ]
+}

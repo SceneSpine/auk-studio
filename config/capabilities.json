@@ -1,0 +1,71 @@
+{
+  "backend": "mlx",
+  "verified_at": 1794653858.742395,
+  "tasks": {
+    "speech_edit": {
+      "state": "supported",
+      "models": [
+        "flash",
+        "base"
+      ],
+      "note": "本机 30 例回归 Flash 86.7% / Base 76.7%（docs/TEST_REPORT.md）",
+      "verified_at": 1794653858.742395
+    },
+    "zero_shot_tts": {
+      "state": "supported",
+      "models": [
+        "flash",
+        "base"
+      ],
+      "note": "全文替换模式即零样本 TTS 英文模板，整句 10/10（docs/TEST_REPORT.md §3.3）",
+      "verified_at": 1794653858.742395
+    },
+    "instruction_tts": {
+      "state": "supported",
+      "models": [
+        "flash",
+        "base"
+      ],
+      "note": "无参考描述式 TTS 实测通过：ASR=大家好欢迎来到今天的节目我们一起聊聊最近发生的新鲜事",
+      "verified_at": 1794653858.742395
+    },
+    "emotion_edit": {
+      "state": "unverified",
+      "models": [],
+      "note": "情绪编辑实验性：5 次实测（happy/angry/sad × 中英文模板，seed 42/7）内容均保持，但 ASR 情绪检测全部 NEUTRAL，未能客观验证情绪变化；可试用，不承诺效果。详见 data/capability-tests/",
+      "verified_at": 1794653858.742395
+    },
+    "timbre_edit": {
+      "state": "supported",
+      "models": [
+        "flash",
+        "base"
+      ],
+      "note": "音色重塑实测通过（中文模板，内容逐字保持）；音色变化本身为主观维度，需试听确认。模板：请将这段音频的音色修改为符合以下描述的声音：“{描述}”。",
+      "verified_at": 1794653858.742395
+    },
+    "speech_enhancement": {
+      "state": "not_supported",
+      "models": [],
+      "note": "MLX 分支未实现降噪/去混响；官方 CUDA 路径能力不代表 MLX 可用",
+      "verified_at": 1794653858.742395
+    },
+    "source_separation": {
+      "state": "not_supported",
+      "models": [],
+      "note": "MLX 分支未实现说话人/源分离",
+      "verified_at": 1794653858.742395
+    },
+    "asr_alignment": {
+      "state": "not_supported",
+      "models": [],
+      "note": "未集成 ASR/强制对齐到工作台（离线验证脚本除外）",
+      "verified_at": 1794653858.742395
+    }
+  },
+  "preferred_templates": {
+    "emotion": "将情感转变为{emotion}。",
+    "timbre": "请将这段音频的音色修改为符合以下描述的声音：“{description}”。",
+    "instruct_tts": "Based on the following description: \"{description}\", generate speech content \"{text}\"."
+  }
+}

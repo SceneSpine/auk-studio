@@ -1,0 +1,123 @@
+{
+  "tencent/AuK-Flash": {
+    ".gitattributes": {
+      "size": 1630
+    },
+    "LICENSE": {
+      "size": 1653
+    },
+    "README.md": {
+      "size": 9725
+    },
+    "assets/arch.png": {
+      "size": 861271,
+      "sha256": "1512b37ee0a642be4ec67a79b37152b87900f63dc9176585a891d42ebaef891a"
+    },
+    "assets/performance.png": {
+      "size": 2249748,
+      "sha256": "d194d8dd5157b6564be2e88a9b289b749485eeb160224b7ca5fa4c5468a88541"
+    },
+    "auk_flash.safetensors": {
+      "size": 6122209092,
+      "sha256": "9b3ec1400a9ebcc87ee540ebfad0aeeb08e4f210149e190b1469fd8eeb977fe4"
+    },
+    "config.yaml": {
+      "size": 1322
+    },
+    "vae.safetensors": {
+      "size": 637322604,
+      "sha256": "0f5857fd0d6b916d161c73fef433e0ccb42484a2dad3aa08e8a51975e29a0645"
+    }
+  },
+  "Qwen/Qwen2.5-Omni-3B": {
+    ".gitattributes": {
+      "size": 1519
+    },
+    "LICENSE": {
+      "size": 7387
+    },
+    "README.md": {
+      "size": 36788
+    },
+    "added_tokens.json": {
+      "size": 579
+    },
+    "chat_template.json": {
+      "size": 1313
+    },
+    "config.json": {
+      "size": 13183
+    },
+    "generation_config.json": {
+      "size": 74
+    },
+    "merges.txt": {
+      "size": 1671853
+    },
+    "model-00001-of-00003.safetensors": {
+      "size": 4994850880,
+      "sha256": "349972cebff443030e9e96e1e930d7230979c6961cf046fa29fc580e4bcf49a6"
+    },
+    "model-00002-of-00003.safetensors": {
+      "size": 4999787448,
+      "sha256": "b29a76dfefb3aa33a5bd0faa19c681d039a44de57223653ea0e933df728c6d8c"
+    },
+    "model-00003-of-00003.safetensors": {
+      "size": 1978024880,
+      "sha256": "8f2138170a87ec604b53232491a96d6dcf19e0724aca37e69aace143e508b170"
+    },
+    "model.safetensors.index.json": {
+      "size": 241817
+    },
+    "preprocessor_config.json": {
+      "size": 667
+    },
+    "special_tokens_map.json": {
+      "size": 832
+    },
+    "spk_dict.pt": {
+      "size": 259544,
+      "sha256": "6a05609b28f5d42b7b748f0f07592545c8f1f6885b9ae8fff64baf56e86b2a18"
+    },
+    "tokenizer.json": {
+      "size": 11421870,
+      "sha256": "8441917e39ae0244e06d704b95b3124795cec478e297f9afac39ba670d7e9d99"
+    },
+    "tokenizer_config.json": {
+      "size": 6469
+    },
+    "vocab.json": {
+      "size": 2776833
+    }
+  },
+  "tencent/AuK": {
+    ".gitattributes": {
+      "size": 1630
+    },
+    "LICENSE": {
+      "size": 1653
+    },
+    "README.md": {
+      "size": 10096
+    },
+    "assets/arch.png": {
+      "size": 861271,
+      "sha256": "1512b37ee0a642be4ec67a79b37152b87900f63dc9176585a891d42ebaef891a"
+    },
+    "assets/performance.png": {
+      "size": 2249748,
+      "sha256": "d194d8dd5157b6564be2e88a9b289b749485eeb160224b7ca5fa4c5468a88541"
+    },
+    "auk_base.safetensors": {
+      "size": 6122209092,
+      "sha256": "29c65c0c6045e8d8fb454019f99c9680508f553fc98fa143feaca3711d0b8614"
+    },
+    "config.yaml": {
+      "size": 1310
+    },
+    "vae.safetensors": {
+      "size": 637322604,
+      "sha256": "0f5857fd0d6b916d161c73fef433e0ccb42484a2dad3aa08e8a51975e29a0645"
+    }
+  }
+}

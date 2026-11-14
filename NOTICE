@@ -1,0 +1,37 @@
+AuK Studio
+Copyright (c) 2026 影脉科技（南京）有限公司 and AuK Studio contributors
+
+This product includes software developed by third parties. A full list of
+attributions and license texts is in THIRD_PARTY_NOTICES.md.
+
+Key attributions:
+
+- AuK (upstream inference engine): Copyright (c) Tencent. MIT License.
+  https://github.com/Tencent-Hunyuan/AuK
+  AuK Studio calls the upstream package; no upstream source is copied into
+  this repository.
+
+- Qwen2.5-Omni-3B (required semantic encoder, downloaded separately by the
+  user): "Qwen is licensed under the Qwen RESEARCH LICENSE AGREEMENT,
+  Copyright (c) Alibaba Cloud. All Rights Reserved."
+  Non-commercial research/evaluation use only; commercial use requires a
+  separate license from Alibaba Cloud. Model weights are NOT distributed
+  with this repository.
+  https://huggingface.co/Qwen/Qwen2.5-Omni-3B
+
+- MLX: Copyright (c) Apple Inc. MIT License.
+- FastAPI, Pydantic, React, Tailwind CSS: MIT License (respective authors).
+- WaveSurfer.js: BSD-3-Clause. lucide-react: ISC.
+- transformers, safetensors, huggingface-hub: Apache-2.0.
+- PyTorch, NumPy, SciPy, soundfile: BSD-style licenses.
+- soxr (libsoxr) and frozendict: LGPL; libsndfile (bundled with soundfile):
+  LGPL. Used via dynamic linking / Python import, unmodified.
+- certifi: MPL-2.0. tqdm: used under the MIT option of its dual license.
+
+FFmpeg is invoked as a user-installed system binary and is not distributed
+with this project; its license (LGPL or GPL) depends on the local build.
+
+The AuK Studio source code is licensed under the MIT License (see LICENSE).
+Model checkpoints and third-party components remain under their own licenses;
+the MIT license of this repository does not grant any commercial rights to
+the Qwen Research License materials.

@@ -1,0 +1,145 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* AuK Studio design tokens — 02-UI-UX设计规范 §2.1（浅色优先） */
+@theme {
+  --color-canvas: #f6f8fc;
+  --color-surface: #ffffff;
+  --color-subtle: #eef2f8;
+  --color-line: #e4e9f2;
+  --color-ink: #182233;
+  --color-ink-2: #66758b;
+  --color-ink-3: #94a0b3;
+  --color-brand: #5374f5;
+  --color-brand-tint: #e9eeff;
+  --color-ok: #178b6e;
+  --color-ok-tint: #e2f4ee;
+  --color-warn: #c68418;
+  --color-warn-tint: #faf0dc;
+  --color-err: #d94c58;
+  --color-err-tint: #fbe9ea;
+
+  /* 兼容旧组件的别名（同值） */
+  --color-surface-2: #eef2f8;
+  --color-surface-3: #e4e9f2;
+  --color-accent: #5374f5;
+  --color-accent-soft: #e9eeff;
+
+  --radius-input: 10px;
+  --radius-btn: 10px;
+  --radius-panel: 14px;
+
+  --font-sans: "Inter", "PingFang SC", "Noto Sans CJK SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+  --font-mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
+}
+
+.dark {
+  --color-canvas: #10131b;
+  --color-surface: #191e29;
+  --color-subtle: #222937;
+  --color-line: #313848;
+  --color-ink: #f2f5fa;
+  --color-ink-2: #a4b0c1;
+  --color-ink-3: #6e7a8d;
+  --color-brand: #7792ff;
+  --color-brand-tint: #253154;
+  --color-ok: #39c99a;
+  --color-ok-tint: #123529;
+  --color-warn: #f5bc59;
+  --color-warn-tint: #3a2e14;
+  --color-err: #ff7583;
+  --color-err-tint: #3d1f24;
+
+  --color-surface-2: #222937;
+  --color-surface-3: #313848;
+  --color-accent: #7792ff;
+  --color-accent-soft: #253154;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 22px;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 波形区域拖拽手柄 */
+.ws-region-handle {
+  background: var(--color-brand) !important;
+}
+
+/* 不确定进度条动画（无真实百分比时使用，不伪造进度） */
+@keyframes auk-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+.auk-indeterminate {
+  animation: auk-indeterminate 1.4s ease-in-out infinite;
+}
+
+@keyframes auk-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.auk-fade-in {
+  animation: auk-fade-in 0.18s ease-out;
+}
+
+@keyframes auk-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.auk-toast-in {
+  animation: auk-toast-in 0.2s ease-out;
+}
+
+/* 焦点可见性（WCAG） */
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auk-indeterminate,
+  .auk-fade-in,
+  .auk-toast-in {
+    animation: none;
+  }
+}
