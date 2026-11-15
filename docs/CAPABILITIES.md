@@ -45,3 +45,9 @@
 - Base 变体的 instruct_tts / timbre_edit 未单独实测（API 同构，标 supported 依据 Flash 实测 + 官方同架构；如 Base 实测失败应降级）。
 - 情绪编辑需主观试听评分（SCORESHEET）或更强情绪源对照后再决定是否升级 supported。
 - 4-bit 量化官方明确不建议（中文退化），UI 不提供 4-bit 选项。
+## Provider 维度（v0.3）
+
+- 上表门禁针对**本地 MLX 后端**。在线 provider（OpenAI 兼容 TTS）能力边界不同：
+  - 在线：仅 `tts`（文本转语音）；edit / instruct_tts / timbre / emotion 一律本地专属。
+  - 在线任务不做本机能力门禁（门禁是 MLX 实测概念），由服务商能力决定；UI 以 provider 类型门禁模式。
+- 默认 provider 永远为 local；在线为显式 opt-in，文本出机需界面显著提示。

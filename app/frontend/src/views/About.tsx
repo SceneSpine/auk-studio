@@ -119,7 +119,7 @@ export default function About() {
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xl font-semibold tracking-tight">AuK Studio</span>
-                <span className="font-mono text-xs text-ink-3">v0.2.0</span>
+                <span className="font-mono text-xs text-ink-3">v0.3.0</span>
                 <StatusBadge tone="neutral">Unofficial community project</StatusBadge>
               </div>
               <p className="mt-1 text-[13px] leading-5 text-ink-2">

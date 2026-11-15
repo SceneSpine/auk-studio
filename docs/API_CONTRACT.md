@@ -102,3 +102,31 @@ allowed 集合新增：`language`（默认 zh-CN）、`allow_update_check`（默
 用 `AUK_DATA_DIR`/`AUK_MODELS_DIR` 指向 tmp_path，**不触碰真实 data/ 与 models/**。
 覆盖：上传类型/大小/路径穿越、job 校验（各 mode 必填）、能力门禁 400、许可未同意 403、install-plan 复用已存在文件、voices consent 强制、rate 越界、settings 白名单、旧端点回归。
 推理 worker 的真实生成测试用 scripts/（已有），不在 pytest 内加载模型。
+## Provider 扩展（v0.3：在线 TTS 接入）
+
+### 概念
+- `local`：内置本地 MLX 推理（现有行为，默认）。
+- 在线 provider：kind="openai_tts"（OpenAI 兼容 /audio/speech 接口）。**仅支持 TTS**（mode=tts）；edit/timbre/emotion/instruct_tts 仍为本地专属。
+- 预设：OpenAI（https://api.openai.com/v1）、SiliconFlow（https://api.siliconflow.cn/v1）、自定义。
+
+### providers 表
+id, name, kind, base_url, api_key, model, voice, enabled INTEGER DEFAULT 1, created_at。
+**api_key 仅存本机 SQLite；任何 API 响应与日志不得出现完整 key**（返回 masked：尾 4 位，如 "sk-…abcd"，has_key: bool）。
+
+### 端点
+- GET /api/providers → {providers: Provider[], local: {id:"local", name:"本地 MLX", available: bool}}；Provider={id,name,kind,base_url,model,voice,enabled,has_key,key_masked,created_at}
+- POST /api/providers {name,kind,base_url,api_key,model,voice} → Provider（base_url 必须 https 或 http://127.0.0.1|localhost，防 SSRF 到内网任意地址；校验必填）
+- PUT /api/providers/{id}（api_key 留空=不修改）→ Provider
+- DELETE /api/providers/{id} → {ok}
+- POST /api/providers/{id}/test → {ok, latency_ms, error?}：发一条极短 TTS（input="test"）验证连通与鉴权；超时 20s。
+
+### 任务路由
+- JobCreate 新增 provider_id（null/"local"=本地）。jobs 表加 provider_id TEXT 列（迁移只增不删）。
+- provider_id 在线时：mode 必须 tts（否则 400）；target_text 必填；忽略参考音频/voice_id/bits/seed 等本地参数。
+- worker：在线任务调用 POST {base_url}/audio/speech，body {model, input, voice, response_format:"wav"}，Header Bearer key；超时 120s；输出存 data/outputs/{jid}_candidate.wav（若返回 mp3 则存 .mp3 并 probe 元数据）；注册 candidate 文件（audio_id 注册逻辑同 instruct_tts）；记录 elapsed_s；RTF 记 null（非本机推理）；peak_memory_gb null。
+- 失败：HTTP 错误/超时 → failed，error 含状态码与服务商消息（**不含 key**）。
+- 在线任务不加载本地模型、不占内存护栏；与本地任务仍串行（单 worker）。
+- GET /api/jobs 响应含 provider_id；前端据此显示 provider 徽章。
+
+### 隐私
+在线任务 = 用户显式选择把文本发送至第三方。UI 必须显著提示目标服务商域名；默认永远 local。

@@ -10,9 +10,10 @@ import type { StudioMode, ViewKey } from "../AppShell";
 import {
   Button, CopyButton, DownloadLink, EmptyState, InlineError, Skeleton, StatusBadge, Tooltip, cn, useToast,
 } from "../ui";
+import { ProviderBadge } from "../models/ProviderBadge";
 import SaveVoiceDialog from "./SaveVoiceDialog";
 import SplicePanel from "./SplicePanel";
-import { jobParamsSummary } from "./shared";
+import { isOnlineProvider, jobParamsSummary } from "./shared";
 
 interface Entry {
   job: Job;
@@ -194,6 +195,7 @@ export default function ResultsDrawer({
                       <span className="text-sm font-semibold">候选 {entries.length - idx}</span>
                     </button>
                     <StatusBadge tone="neutral">{MODE_LABEL[e.job.mode] ?? e.job.mode}</StatusBadge>
+                    <ProviderBadge providerId={e.job.provider_id} />
                     {!!e.file.favorite && <StatusBadge tone="warn" icon={<Star size={12} fill="currentColor" aria-hidden />}>最佳</StatusBadge>}
                     {e.job.accepted === 1 && <StatusBadge tone="ready">已接受</StatusBadge>}
                     {e.job.accepted === 0 && <StatusBadge tone="error">未接受</StatusBadge>}
@@ -204,11 +206,17 @@ export default function ResultsDrawer({
 
                   <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-3">
                     <span>{fmtDur(e.file.duration ?? e.job.output_duration)}</span>
-                    <span>{e.job.model_variant === "base" ? "AuK Base" : "AuK-Flash"}</span>
-                    <span>{e.job.bits ? `${e.job.bits}-bit` : "fp32"}</span>
-                    {e.job.seed != null && <span>seed {e.job.seed}</span>}
-                    {e.job.nfe != null && <span>NFE {e.job.nfe}</span>}
-                    <span>RTF {e.job.rtf ?? "—"}</span>
+                    {isOnlineProvider(e.job.provider_id) ? (
+                      <span>在线 API 生成</span>
+                    ) : (
+                      <>
+                        <span>{e.job.model_variant === "base" ? "AuK Base" : "AuK-Flash"}</span>
+                        <span>{e.job.bits ? `${e.job.bits}-bit` : "fp32"}</span>
+                        {e.job.seed != null && <span>seed {e.job.seed}</span>}
+                        {e.job.nfe != null && <span>NFE {e.job.nfe}</span>}
+                        <span>RTF {e.job.rtf ?? "—"}</span>
+                      </>
+                    )}
                     <span>耗时 {fmtDur(e.job.elapsed_s)}</span>
                   </div>
 
@@ -293,7 +301,7 @@ export default function ResultsDrawer({
                 urlB={api.fileUrl(selected.file.id)}
                 waveformA={waveform}
                 labelA={`原始 · ${audio.original_name}`}
-                labelB={`生成候选 · ${fmtDur(selected.file.duration ?? selected.job.output_duration)} · ${selected.job.bits ? selected.job.bits + "-bit" : "fp32"}${selected.job.seed != null ? ` · seed ${selected.job.seed}` : ""}`}
+                labelB={`生成候选 · ${fmtDur(selected.file.duration ?? selected.job.output_duration)} · ${isOnlineProvider(selected.job.provider_id) ? "在线 API" : `${selected.job.bits ? selected.job.bits + "-bit" : "fp32"}${selected.job.seed != null ? ` · seed ${selected.job.seed}` : ""}`}`}
               />
             </div>
           )}

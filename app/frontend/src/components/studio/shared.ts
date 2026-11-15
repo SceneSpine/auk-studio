@@ -86,6 +86,8 @@ export const EMOTIONS = ["开心", "愤怒", "悲伤", "恐惧", "惊讶", "厌�
 /* ---------------- 生成配置 ---------------- */
 
 export interface GenConfig {
+  /** 推理 Provider："local" = 内置本地 MLX（默认）；其余为在线 TTS provider id */
+  providerId: string;
   modelVariant: "flash" | "base";
   bits: "8" | "fp32";
   sequential: boolean;
@@ -94,6 +96,7 @@ export interface GenConfig {
   nfe: string;
 }
 export const CONFIG_DEFAULTS: GenConfig = {
+  providerId: "local",
   modelVariant: "flash",
   bits: "8",
   sequential: false,
@@ -101,6 +104,11 @@ export const CONFIG_DEFAULTS: GenConfig = {
   genSeconds: "",
   nfe: "32",
 };
+
+/** provider_id 是否指向在线 Provider（null/undefined/"local" 均为本地） */
+export function isOnlineProvider(id: string | null | undefined): boolean {
+  return !!id && id !== "local";
+}
 
 /* ---------------- 能力门禁 ---------------- */
 
@@ -161,6 +169,7 @@ export function jobParamsSummary(job: Job, audioName?: string | null): string {
       description: job.description || undefined,
       emotion: job.emotion || undefined,
       voice_id: job.voice_id ?? undefined,
+      provider_id: isOnlineProvider(job.provider_id) ? job.provider_id : undefined,
       model_variant: job.model_variant,
       bits: job.bits,
       sequential: !!job.sequential,
@@ -185,6 +194,7 @@ export function payloadFromJob(job: Job): Record<string, unknown> {
   }
   return {
     kind: "infer",
+    provider_id: job.provider_id || undefined,
     audio_id: job.audio_id,
     mode: job.mode,
     original_text: job.original_text,

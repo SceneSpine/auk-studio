@@ -21,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import config, db
 from .api_models import router as models_router
+from .api_providers import router as providers_router
 from .api_system import router as system_router
 from .api_voices import router as voices_router
 from .routers import router
@@ -122,6 +123,7 @@ app.include_router(router)
 app.include_router(system_router)
 app.include_router(models_router)
 app.include_router(voices_router)
+app.include_router(providers_router)
 
 if FRONTEND_DIST.is_dir():
     app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")

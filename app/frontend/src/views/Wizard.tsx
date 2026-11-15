@@ -5,20 +5,25 @@
  */
 import { useEffect, useState } from "react";
 import {
-  ArrowLeft, ArrowRight, CheckCircle2, FlaskConical, Layers, Play, RefreshCw,
+  ArrowLeft, ArrowRight, CheckCircle2, Cloud, FlaskConical, Layers, Play, RefreshCw,
   ShieldCheck, Wand2, Zap,
 } from "lucide-react";
 import { api } from "../api";
 import type { StudioMode, ViewKey } from "../components/AppShell";
 import LogViewer from "../components/LogViewer";
 import {
-  Button, Card, InlineError, InlineNote, PageHeader, Progress, Skeleton, StatusBadge, Stepper, cn, useToast,
+  Button, Card, Collapse, InlineError, InlineNote, PageHeader, Progress, Skeleton, StatusBadge, Stepper, cn, useToast,
 } from "../components/ui";
 import { ReadinessBanner, fmtGb } from "../components/system/common";
 import { CheckList } from "../components/system/CheckList";
 import { LicenseConsent } from "../components/models/LicenseConsent";
 import { InstallProgress } from "../components/models/InstallProgress";
 import { MemoryFitBadge, ModelStateBadge, PHASE_LABEL } from "../components/models/common";
+import {
+  ProviderFormFields, draftFromPreset, validateProviderDraft,
+  type ProviderDraft, type ProviderErrors,
+} from "../components/models/ProviderForm";
+import { isOnlineProvider } from "../components/studio/shared";
 import { usePoll } from "../hooks";
 import type { FileRef, InstallPlan, JobStatus } from "../types";
 import { RUNNING, STATUS_LABEL } from "../types";
@@ -69,6 +74,13 @@ export default function Wizard({ onNavigate }: { onNavigate: (v: ViewKey, m?: St
   const [installError, setInstallError] = useState<string | null>(null);
   const [smokeResult, setSmokeResult] = useState<FileRef[] | null>(null);
 
+  /* 在线 TTS 可选路径：配置后可跳过本地安装，烟测改用在线 provider */
+  const [providersTick, setProvidersTick] = useState(0);
+  const [onlineDraft, setOnlineDraft] = useState<ProviderDraft>(() => draftFromPreset("openai"));
+  const [onlineErrors, setOnlineErrors] = useState<ProviderErrors>({});
+  const [onlineSaving, setOnlineSaving] = useState(false);
+  const [onlineSaveError, setOnlineSaveError] = useState("");
+
   const modelId = aux.variant === "flash" ? "auk-flash" : "auk-base";
 
   // 持久化进度
@@ -82,6 +94,7 @@ export default function Wizard({ onNavigate }: { onNavigate: (v: ViewKey, m?: St
   }, [step, aux]);
 
   const models = usePoll(api.models, 10000, true);
+  const providers = usePoll(api.providers, 30000, true, [providersTick]);
   const diag = usePoll(api.diagnostics, 30000, step === 0, [diagTick]);
   const installJob = usePoll(() => api.job(aux.installJobId!), 2000, !!aux.installJobId, [aux.installJobId]);
   const verifyJob = usePoll(() => api.job(aux.verifyJobId!), 2000, !!aux.verifyJobId, [aux.verifyJobId]);
@@ -89,6 +102,9 @@ export default function Wizard({ onNavigate }: { onNavigate: (v: ViewKey, m?: St
 
   const selectedModel = models.data?.models.find((m) => m.id === modelId) ?? null;
   const deps = models.data?.models.filter((m) => m.role === "dependency") ?? [];
+  const onlineProviders = (providers.data?.providers ?? []).filter((p) => p.enabled);
+  const onlineConfigured = onlineProviders.length > 0;
+  const smokeOnlineProvider = onlineProviders[0] ?? null;
   const alreadyReady = plan?.already_ready || selectedModel?.state === "ready";
   const consentChecked = !!plan && plan.licenses.length > 0 && plan.licenses.every((l) => aux.consentIds.includes(l.id));
   const installDone = installJob.data?.status === "completed" || alreadyReady;
@@ -174,16 +190,50 @@ export default function Wizard({ onNavigate }: { onNavigate: (v: ViewKey, m?: St
     }
   };
 
+  const saveOnlineProvider = async () => {
+    const errs = validateProviderDraft(onlineDraft, false);
+    setOnlineErrors(errs);
+    if (Object.keys(errs).length > 0) return;
+    setOnlineSaving(true);
+    setOnlineSaveError("");
+    try {
+      await api.createProvider({
+        name: onlineDraft.name.trim(),
+        kind: "openai_tts",
+        base_url: onlineDraft.baseUrl.trim(),
+        api_key: onlineDraft.apiKey.trim(),
+        model: onlineDraft.model.trim(),
+        voice: onlineDraft.voice.trim(),
+      });
+      toast("success", "在线 TTS Provider 已保存，可跳过本地模型安装");
+      setOnlineDraft(draftFromPreset("openai"));
+      setOnlineErrors({});
+      setProvidersTick((t) => t + 1);
+    } catch (e) {
+      setOnlineSaveError((e as Error).message);
+    } finally {
+      setOnlineSaving(false);
+    }
+  };
+
   const startSmoke = async () => {
     setSmokeResult(null);
     try {
-      const job = await api.createJob({
-        mode: "instruct_tts",
-        description: "一位平静自然的女性声音",
-        target_text: "安装完成，开始创作吧。",
-        model_variant: aux.variant,
-        bits: 8,
-      });
+      // 已配置在线 API：烟测直接走在线 TTS（不依赖本地模型）
+      const job = smokeOnlineProvider
+        ? await api.createJob({
+            kind: "infer",
+            provider_id: smokeOnlineProvider.id,
+            mode: "tts",
+            target_text: "安装完成，开始创作吧。",
+          })
+        : await api.createJob({
+            mode: "instruct_tts",
+            description: "一位平静自然的女性声音",
+            target_text: "安装完成，开始创作吧。",
+            model_variant: aux.variant,
+            bits: 8,
+          });
       setAux((p) => ({ ...p, smokeJobId: job.id }));
       toast("info", "冒烟测试任务已创建");
     } catch (e) {
@@ -202,7 +252,8 @@ export default function Wizard({ onNavigate }: { onNavigate: (v: ViewKey, m?: St
     }
   };
 
-  const nextDisabled = step === 5 || (step === 2 && !alreadyReady && !consentChecked);
+  // 已配置在线 API 时，许可/下载/转换等本地步骤可跳过（本地流程本身不变）
+  const nextDisabled = step === 5 || (step === 2 && !alreadyReady && !consentChecked && !onlineConfigured);
   const done = new Set<number>();
   for (let i = 0; i < step; i++) done.add(i);
   if (installDone) {
@@ -319,12 +370,42 @@ export default function Wizard({ onNavigate }: { onNavigate: (v: ViewKey, m?: St
                 ))}
               </div>
             </Card>
+
+            {/* 在线 TTS 可选路径：无需本地模型 */}
+            <Collapse
+              title={
+                <span className="inline-flex items-center gap-1.5">
+                  <Cloud size={14} aria-hidden />
+                  在线 TTS API（可选，无需本地模型）
+                </span>
+              }
+              badge={onlineConfigured ? <StatusBadge tone="ready">已配置 {onlineProviders.length}</StatusBadge> : undefined}
+            >
+              <div className="space-y-3">
+                <p className="text-[13px] leading-5 text-ink-2">
+                  配置后可跳过本地模型安装，直接使用文本转语音。在线 Provider 仅支持 TTS，生成时文本将发送至第三方服务商。
+                </p>
+                {onlineConfigured && (
+                  <InlineNote>
+                    已配置：{onlineProviders.map((p) => p.name).join("、")}。可继续本地安装，也可直接前往「验证」步骤用在线 API 冒烟测试。
+                  </InlineNote>
+                )}
+                <ProviderFormFields draft={onlineDraft} onChange={setOnlineDraft} errors={onlineErrors} />
+                {onlineSaveError && <InlineError>{onlineSaveError}</InlineError>}
+                <Button variant="primary" size="sm" loading={onlineSaving} onClick={saveOnlineProvider}>
+                  保存在线 Provider
+                </Button>
+              </div>
+            </Collapse>
           </div>
         )}
 
         {/* Step 3 · 第三方许可 */}
         {step === 2 && (
           <div className="space-y-4">
+            {onlineConfigured && (
+              <InlineNote>可跳过（已配置在线 API）：无需本地模型即可文本转语音；如需本地推理，仍请完成许可确认。</InlineNote>
+            )}
             {planLoading && <Skeleton className="h-48 w-full rounded-panel" />}
             {planError && !planLoading && <InlineError onRetry={() => setPlanTick((t) => t + 1)}>无法获取许可信息：{planError}</InlineError>}
             {plan && !planLoading && (
@@ -342,6 +423,9 @@ export default function Wizard({ onNavigate }: { onNavigate: (v: ViewKey, m?: St
         {/* Step 4 · 下载 */}
         {step === 3 && (
           <div className="space-y-4">
+            {onlineConfigured && !alreadyReady && (
+              <InlineNote>可跳过（已配置在线 API）：下载仅在使用本地 MLX 时需要，可直接前往「验证」步骤。</InlineNote>
+            )}
             {alreadyReady ? (
               <InlineNote>已复用本地权重，无需下载。可前往「转换」与「验证」步骤。</InlineNote>
             ) : !aux.installJobId ? (
@@ -386,6 +470,9 @@ export default function Wizard({ onNavigate }: { onNavigate: (v: ViewKey, m?: St
         {/* Step 5 · 转换 */}
         {step === 4 && (
           <div className="space-y-4">
+            {onlineConfigured && !alreadyReady && (
+              <InlineNote>可跳过（已配置在线 API）：转换仅在使用本地 MLX 时需要，可直接前往「验证」步骤。</InlineNote>
+            )}
             {alreadyReady ? (
               <InlineNote>模型已就绪，转换产物已存在，无需再次转换。</InlineNote>
             ) : !aux.installJobId ? (
@@ -433,7 +520,9 @@ export default function Wizard({ onNavigate }: { onNavigate: (v: ViewKey, m?: St
 
             <Card title="冒烟测试">
               <p className="mb-3 text-[13px] leading-5 text-ink-2">
-                创建一个真实的描述式 TTS 任务（「一位平静自然的女性声音」朗读「安装完成，开始创作吧。」），验证整条推理链路可用。
+                {smokeOnlineProvider
+                  ? `已配置在线 API：将使用「${smokeOnlineProvider.name}」发送一条 TTS（朗读「安装完成，开始创作吧。」），验证连通与鉴权。文本会发送至第三方。`
+                  : "创建一个真实的描述式 TTS 任务（「一位平静自然的女性声音」朗读「安装完成，开始创作吧。」），验证整条推理链路可用。"}
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 <Button
@@ -441,11 +530,13 @@ export default function Wizard({ onNavigate }: { onNavigate: (v: ViewKey, m?: St
                   variant="primary"
                   icon={<FlaskConical size={14} />}
                   onClick={startSmoke}
-                  disabled={selectedModel?.state !== "ready" || (!!smokeJob.data && RUNNING.includes(smokeJob.data.status))}
+                  disabled={(!smokeOnlineProvider && selectedModel?.state !== "ready") || (!!smokeJob.data && RUNNING.includes(smokeJob.data.status))}
                 >
                   冒烟测试
                 </Button>
-                {selectedModel?.state !== "ready" && <span className="text-[12.5px] text-ink-3">模型就绪后可进行冒烟测试。</span>}
+                {!smokeOnlineProvider && selectedModel?.state !== "ready" && (
+                  <span className="text-[12.5px] text-ink-3">模型就绪后可进行冒烟测试。</span>
+                )}
               </div>
 
               {smokeJob.data && (
@@ -464,7 +555,11 @@ export default function Wizard({ onNavigate }: { onNavigate: (v: ViewKey, m?: St
                         <CheckCircle2 size={15} aria-hidden /> 推理链路验证通过，试听生成结果：
                       </p>
                       <audio controls src={smokeFile.url ?? api.outputUrl(smokeFile.id)} className="w-full" />
-                      <Button variant="primary" icon={<Play size={15} />} onClick={() => onNavigate("studio", "edit")}>
+                      <Button
+                        variant="primary"
+                        icon={<Play size={15} />}
+                        onClick={() => onNavigate("studio", isOnlineProvider(smokeJob.data?.provider_id) ? "tts" : "edit")}
+                      >
                         开始创作
                       </Button>
                     </div>
@@ -490,7 +585,11 @@ export default function Wizard({ onNavigate }: { onNavigate: (v: ViewKey, m?: St
             下一步
           </Button>
         ) : (
-          <Button variant="primary" icon={<Wand2 size={15} />} onClick={() => onNavigate("studio", "edit")}>
+          <Button
+            variant="primary"
+            icon={<Wand2 size={15} />}
+            onClick={() => onNavigate("studio", onlineConfigured && !alreadyReady ? "tts" : "edit")}
+          >
             开始创作
           </Button>
         )}

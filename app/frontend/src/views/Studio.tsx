@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AudioWaveform, Mic, Palette, Smile, Sparkles } from "lucide-react";
 import { api } from "../api";
-import type { AudioMeta, Capabilities, FileRef, Job, ModelInfo, ModelsResponse, Preflight, Settings, Waveform } from "../types";
+import type { AudioMeta, Capabilities, FileRef, Job, ModelInfo, ModelsResponse, Preflight, Provider, Settings, Waveform } from "../types";
 import { RUNNING } from "../types";
 import { usePoll } from "../hooks";
 import type { StudioMode, ViewKey } from "../components/AppShell";
@@ -60,6 +60,10 @@ export default function Studio({
   const { data: models, error: modelsError } = usePoll<ModelsResponse>(() => api.models(), 10000, true);
   const [legacyModels, setLegacyModels] = useState<ModelsResponse | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
+
+  /* 在线 TTS providers：null = 接口不可用（降级只显示本地） */
+  const [providerList, setProviderList] = useState<Provider[] | null>(null);
+  const [providersReady, setProvidersReady] = useState(false);
 
   /* /api/models 不可用时（旧后端）降级到 /api/model/status，仍展示真实就绪状态 */
   useEffect(() => {
@@ -117,6 +121,28 @@ export default function Studio({
   /* TTS 参考音频（独立于主音频） */
   const [ttsRef, setTtsRef] = useState<AudioMeta | null>(null);
 
+  /* ---------------- 在线 Provider 派生状态 ---------------- */
+  const onlineProvider = providerList?.find((p) => p.id === config.providerId) ?? null;
+  const isOnline = !!onlineProvider;
+
+  /* 草稿中的在线 provider 已删除/停用/接口不可用 → 静默切回本地默认 */
+  useEffect(() => {
+    if (!providersReady || config.providerId === "local") return;
+    if (!providerList?.some((p) => p.id === config.providerId)) {
+      setConfig((c) => ({ ...c, providerId: "local" }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [providersReady, providerList, config.providerId]);
+
+  /* 在线仅支持 TTS：选中在线时非 tts 模式自动切换 */
+  useEffect(() => {
+    if (isOnline && mode !== "tts") {
+      onModeChange("tts");
+      toast("info", "在线 API 仅支持文本转语音，已自动切换到 TTS 模式");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOnline, mode]);
+
   /* ---------------- 任务 ---------------- */
   const [jobId, setJobId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -152,6 +178,10 @@ export default function Studio({
         setCapsFailed(true);
       });
     api.audioList().then(setRecent).catch(() => {});
+    api.providers()
+      .then((r) => setProviderList(r.providers.filter((p) => p.enabled)))
+      .catch(() => setProviderList(null))
+      .finally(() => setProvidersReady(true));
     // 一次性迁移：旧草稿的空种子（旧默认=随机）升级为默认 1；用户主动设的值不动
     try {
       if (!localStorage.getItem("auk-seed-default-v1")) {
@@ -243,6 +273,7 @@ export default function Studio({
           if (j.kind && j.kind !== "infer") return false;
           if (mode === "design") return j.mode === "instruct_tts";
           if (mode === "tts") {
+            if (isOnline) return j.mode === "tts" && j.provider_id === config.providerId;
             if (ttsRef && j.audio_id === ttsRef.id) return true;
             if (ttsDraft.voiceId && j.voice_id === ttsDraft.voiceId) return true;
             return false;
@@ -252,7 +283,7 @@ export default function Studio({
         setHistoryJobs(relevant.slice(0, 10));
       })
       .catch(() => setHistoryJobs([]));
-  }, [mode, audio, ttsRef, ttsDraft.voiceId]);
+  }, [mode, audio, ttsRef, ttsDraft.voiceId, isOnline, config.providerId]);
 
   useEffect(() => {
     // 仅在无任务或任务到达终态时刷新候选历史，避免轮询期间重复请求
@@ -285,9 +316,14 @@ export default function Studio({
           : editDraft.customInstruction.trim() !== "";
     contentHint = editDraft.sub === "replace" ? "请填写原片段与替换文本" : editDraft.sub === "full" ? "请填写替换后的完整文本" : "请填写自由指令";
   } else if (mode === "tts") {
-    const hasRef = (ttsDraft.refKind === "upload" && !!ttsRef) || (ttsDraft.refKind === "voice" && !!ttsDraft.voiceId);
-    contentOk = ttsDraft.text.trim() !== "" && hasRef;
-    contentHint = ttsDraft.text.trim() === "" ? "请填写朗读文本" : "请选择参考音频或音色库参考（无参考请改用音色设计）";
+    if (isOnline) {
+      contentOk = ttsDraft.text.trim() !== "";
+      contentHint = "请填写朗读文本";
+    } else {
+      const hasRef = (ttsDraft.refKind === "upload" && !!ttsRef) || (ttsDraft.refKind === "voice" && !!ttsDraft.voiceId);
+      contentOk = ttsDraft.text.trim() !== "" && hasRef;
+      contentHint = ttsDraft.text.trim() === "" ? "请填写朗读文本" : "请选择参考音频或音色库参考（无参考请改用音色设计）";
+    }
   } else if (mode === "design") {
     contentOk = designDraft.description.trim() !== "" && designDraft.text.trim() !== "";
     contentHint = "请填写音色描述与试听文案";
@@ -299,12 +335,15 @@ export default function Studio({
     contentHint = "请选择目标情绪";
   }
 
-  const canSubmit =
-    cap.state !== "not_supported" && !noMainModel && selectedReady &&
-    (!audioNeeded || !!audio) && contentOk && !isRunning && !submitting;
+  /* 在线分支：只需文本 + provider 启用，不依赖本地模型/参考音频 */
+  const canSubmit = isOnline
+    ? contentOk && !!onlineProvider?.enabled && !isRunning && !submitting
+    : cap.state !== "not_supported" && !noMainModel && selectedReady &&
+      (!audioNeeded || !!audio) && contentOk && !isRunning && !submitting;
 
-  const submitHint =
-    cap.state === "not_supported" ? "当前 MLX 分支不支持该能力，无法提交"
+  const submitHint = isOnline
+    ? !contentOk ? contentHint : null
+    : cap.state === "not_supported" ? "当前 MLX 分支不支持该能力，无法提交"
       : noMainModel ? "请先安装主模型（Flash / Base）"
         : !selectedReady ? "所选模型未安装，请切换模型或前往安装"
           : audioNeeded && !audio ? "请先上传源音频"
@@ -313,6 +352,10 @@ export default function Studio({
 
   /* ---------------- 提交 / 取消 / 重试 / 重做 ---------------- */
   const buildPayload = (): Record<string, unknown> | null => {
+    /* 在线：仅 provider_id + tts + 文本，不带本地参数 */
+    if (isOnline) {
+      return { kind: "infer", provider_id: config.providerId, mode: "tts", target_text: ttsDraft.text };
+    }
     const common = {
       kind: "infer",
       model_variant: config.modelVariant,
@@ -358,21 +401,23 @@ export default function Studio({
     const payload = buildPayload();
     if (!payload) return;
     setError("");
-    // 提交前资源适配检查（端点不可用时优雅降级，不阻塞提交）
-    try {
-      const pf = await api.preflight({
-        model_variant: config.modelVariant,
-        task: TASK_FOR_MODE[mode],
-        bits: config.bits === "fp32" ? null : Number(config.bits),
-        sequential: config.sequential,
-      });
-      setPreflight(pf);
-      if (pf.level === "blocked") {
-        setError(`资源检查阻断：${pf.reasons.join("；") || "资源不足，请查看环境检测"}`);
-        return;
+    // 提交前资源适配检查（仅本地推理需要；端点不可用时优雅降级，不阻塞提交）
+    if (!isOnline) {
+      try {
+        const pf = await api.preflight({
+          model_variant: config.modelVariant,
+          task: TASK_FOR_MODE[mode],
+          bits: config.bits === "fp32" ? null : Number(config.bits),
+          sequential: config.sequential,
+        });
+        setPreflight(pf);
+        if (pf.level === "blocked") {
+          setError(`资源检查阻断：${pf.reasons.join("；") || "资源不足，请查看环境检测"}`);
+          return;
+        }
+      } catch {
+        /* preflight 不可用：继续提交，由后端最终把关 */
       }
-    } catch {
-      /* preflight 不可用：继续提交，由后端最终把关 */
     }
     setSubmitting(true);
     try {
@@ -382,7 +427,7 @@ export default function Studio({
       setJobId(j.id);
       setJobPollActive(true);
       setDrawerOpen(true);
-      toast("info", "任务已提交，本机队列串行执行");
+      toast("info", isOnline ? "任务已提交，将由在线 API 生成（队列串行）" : "任务已提交，本机队列串行执行");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -474,6 +519,7 @@ export default function Studio({
   const tabItems = MODE_ORDER.map((m) => {
     const c = capFor(caps, m);
     const Icon = MODE_ICONS[m];
+    const onlineLocked = isOnline && m !== "tts";
     const label = (
       <span className="inline-flex items-center gap-1.5">
         <Icon size={14} aria-hidden />
@@ -482,8 +528,12 @@ export default function Studio({
     );
     return {
       key: m,
-      label: c.state === "not_supported" ? <Tooltip label={c.note || "当前 MLX 分支不支持该能力"}>{label}</Tooltip> : label,
-      disabled: c.state === "not_supported",
+      label: onlineLocked ? (
+        <Tooltip label="在线 API 仅支持文本转语音">{label}</Tooltip>
+      ) : c.state === "not_supported" ? (
+        <Tooltip label={c.note || "当前 MLX 分支不支持该能力"}>{label}</Tooltip>
+      ) : label,
+      disabled: c.state === "not_supported" || onlineLocked,
       badge: c.state === "unverified" ? (
         <StatusBadge tone="warn" className="px-1.5 py-0 text-[10px] leading-4">实验性</StatusBadge>
       ) : undefined,
@@ -502,8 +552,8 @@ export default function Studio({
         </span>
       </div>
 
-      {/* 全局提示 */}
-      {noMainModel && (
+      {/* 全局提示（在线 Provider 不依赖本地模型） */}
+      {noMainModel && !isOnline && (
         <div className="shrink-0">
           <InlineNote tone="warn">
             尚未安装就绪的主模型（AuK-Flash / AuK Base），无法生成。
@@ -549,6 +599,8 @@ export default function Studio({
             <TtsPanel
               draft={ttsDraft}
               onChange={setTtsDraft}
+              isOnline={isOnline}
+              providerName={onlineProvider?.name ?? null}
               refAudio={ttsRef}
               onRefUploaded={(a) => {
                 setTtsRef(a);
@@ -572,6 +624,7 @@ export default function Studio({
           <ConfigPanel
             config={config}
             onConfigChange={setConfig}
+            providers={providerList ?? []}
             models={effectiveModels}
             modelsError={effectiveModels ? null : modelsError}
             canActivate={!!models}

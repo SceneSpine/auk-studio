@@ -24,6 +24,8 @@ import {
 } from "../ui";
 import JobLog from "./JobLog";
 import { INSTALL_PHASE_LABEL, jobKind, kindLabel, modelLabel, statusTone } from "./shared";
+import { ProviderBadge, useProviderNames } from "../models/ProviderBadge";
+import { isOnlineProvider } from "../studio/shared";
 
 const INFER_STAGES: { key: JobStatus; label: string }[] = [
   { key: "queued", label: "排队" },
@@ -132,24 +134,33 @@ function InstallProgress({ job }: { job: Job }) {
 
 /* ---------------- 参数 ---------------- */
 
-function ParamGrid({ job }: { job: Job }) {
+function ParamGrid({ job, providerName }: { job: Job; providerName?: string | null }) {
   const kind = jobKind(job);
+  const online = isOnlineProvider(job.provider_id);
+  const acceptItem = { label: "接受状态", value: job.accepted === 1 ? "已接受" : job.accepted === 0 ? "不接受" : "未评价" };
   const items: { label: string; value: ReactNode }[] =
     kind === "infer"
-      ? [
-          { label: "模型", value: modelLabel(job.model_variant) },
-          { label: "精度", value: job.bits ? `${job.bits}-bit` : "fp32" },
-          { label: "Sequential", value: job.sequential ? "开" : "关" },
-          { label: "种子", value: job.seed != null ? String(job.seed) : "随机" },
-          { label: "目标时长", value: job.gen_seconds != null ? `${job.gen_seconds}s` : "自动" },
-          { label: "NFE 步数", value: job.nfe != null ? String(job.nfe) : "默认" },
-          { label: "峰值内存", value: job.peak_memory_gb != null ? `${job.peak_memory_gb} GB` : "—" },
-          { label: "RTF", value: job.rtf != null ? job.rtf.toFixed(2) : "—" },
-          { label: "输出时长", value: fmtDur(job.output_duration) },
-          { label: "接受状态", value: job.accepted === 1 ? "已接受" : job.accepted === 0 ? "不接受" : "未评价" },
-        ]
+      ? online
+        ? [
+            // 在线任务：本地参数不适用，只显示 Provider 与结果信息
+            { label: "推理 Provider", value: providerName ?? "在线 API" },
+            { label: "输出时长", value: fmtDur(job.output_duration) },
+            acceptItem,
+          ]
+        : [
+            { label: "模型", value: modelLabel(job.model_variant) },
+            { label: "精度", value: job.bits ? `${job.bits}-bit` : "fp32" },
+            { label: "Sequential", value: job.sequential ? "开" : "关" },
+            { label: "种子", value: job.seed != null ? String(job.seed) : "随机" },
+            { label: "目标时长", value: job.gen_seconds != null ? `${job.gen_seconds}s` : "自动" },
+            { label: "NFE 步数", value: job.nfe != null ? String(job.nfe) : "默认" },
+            { label: "峰值内存", value: job.peak_memory_gb != null ? `${job.peak_memory_gb} GB` : "—" },
+            { label: "RTF", value: job.rtf != null ? job.rtf.toFixed(2) : "—" },
+            { label: "输出时长", value: fmtDur(job.output_duration) },
+            acceptItem,
+          ]
       : [{ label: "目标模型", value: modelLabel(job.model_variant) }];
-  if (kind === "infer" && job.voice_id) items.push({ label: "引用音色", value: job.voice_id });
+  if (kind === "infer" && !online && job.voice_id) items.push({ label: "引用音色", value: job.voice_id });
 
   const texts: { label: string; value: string }[] = [];
   if (kind === "infer") {
@@ -173,7 +184,7 @@ function ParamGrid({ job }: { job: Job }) {
           </div>
         ))}
       </dl>
-      {kind === "infer" && (
+      {kind === "infer" && !online && (
         <div>
           <div className="mb-1 text-xs text-ink-3">最终指令（final_instruction）</div>
           <p className="whitespace-pre-wrap break-words rounded-input bg-subtle px-3 py-2 font-mono text-xs leading-5 text-ink-2">
@@ -241,6 +252,7 @@ export default function JobDetail({
   const [tick, setTick] = useState(0);
   const [busy, setBusy] = useState<"cancel" | "retry" | "accept" | "delete" | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const providerNames = useProviderNames();
 
   /* 运行中 2.5s 轮询；终态降频到 60s（首次仍立即拉取） */
   const [pollMs, setPollMs] = useState(2500);
@@ -407,6 +419,7 @@ export default function JobDetail({
             <div className="flex flex-wrap items-center gap-2">
               <StatusBadge tone={statusTone(j.status)}>{STATUS_LABEL[j.status]}</StatusBadge>
               <span className="text-[13px] font-medium">{kindLabel(j)}</span>
+              <ProviderBadge providerId={j.provider_id} />
               <span className="text-xs text-ink-3">创建 {fmtTime(j.created_at)}</span>
               {j.elapsed_s != null && <span className="text-xs text-ink-3">耗时 {fmtDur(j.elapsed_s)}</span>}
             </div>
@@ -435,7 +448,7 @@ export default function JobDetail({
             {/* 参数 */}
             <section>
               <h4 className="mb-2 text-[13px] font-semibold">参数</h4>
-              <ParamGrid job={j} />
+              <ParamGrid job={j} providerName={j.provider_id ? providerNames?.get(j.provider_id) ?? null : null} />
             </section>
 
             {/* 输入音频 */}

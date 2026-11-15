@@ -116,6 +116,17 @@ CREATE TABLE IF NOT EXISTS voices (
     created_at REAL NOT NULL,
     archived INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS providers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'openai_tts',
+    base_url TEXT NOT NULL,
+    api_key TEXT DEFAULT '',
+    model TEXT DEFAULT '',
+    voice TEXT DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at REAL NOT NULL
+);
 """
 
 
@@ -161,6 +172,7 @@ def init_db() -> None:
             "ALTER TABLE jobs ADD COLUMN install_json TEXT DEFAULT ''",
             "ALTER TABLE jobs ADD COLUMN note TEXT DEFAULT ''",
             "ALTER TABLE jobs ADD COLUMN model_id TEXT",
+            "ALTER TABLE jobs ADD COLUMN provider_id TEXT",
             "ALTER TABLE files ADD COLUMN rating INTEGER",
             "ALTER TABLE files ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE control ADD COLUMN activate_variant TEXT",
@@ -233,7 +245,7 @@ def get_file(file_id: str) -> dict | None:
 JOB_FIELDS = (
     "audio_id mode original_text target_text segment_json instruction final_instruction "
     "model_variant bits sequential seed gen_seconds nfe kind voice_id description emotion "
-    "note model_id"
+    "note model_id provider_id"
 ).split()
 
 

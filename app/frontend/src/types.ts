@@ -59,6 +59,7 @@ export interface Job {
   nfe: number | null;
   voice_id?: string | null;
   model_id?: string | null;
+  provider_id?: string | null;
   description?: string;
   emotion?: string;
   install_json?: InstallProgress | null;
@@ -93,6 +94,32 @@ export interface FileRef {
   sample_rate?: number;
   rating?: number | null;
   favorite?: number;
+}
+
+/* ---------------- providers（本地 + 在线 TTS） ---------------- */
+
+export interface Provider {
+  id: string;
+  name: string;
+  kind: "openai_tts";
+  base_url: string;
+  model: string;
+  voice: string;
+  enabled: boolean;
+  has_key: boolean;
+  key_masked: string;
+  created_at: number;
+}
+
+export interface ProvidersResponse {
+  providers: Provider[];
+  local: { id: "local"; name: string; available: boolean };
+}
+
+export interface ProviderTestResult {
+  ok: boolean;
+  latency_ms: number | null;
+  error?: string;
 }
 
 /* ---------------- capabilities ---------------- */

@@ -1,8 +1,8 @@
 /** 生成配置（右栏 35%）：模型选择 + 资源适配 + 高级参数 + 提交/取消 + 任务进度与日志。 */
 import { useState } from "react";
-import { ChevronDown, Gauge, RotateCcw, SlidersHorizontal, Sparkles, Square } from "lucide-react";
+import { ChevronDown, Cloud, Gauge, RotateCcw, SlidersHorizontal, Sparkles, Square } from "lucide-react";
 import { api } from "../../api";
-import type { Job, JobStatus, ModelsResponse, Preflight, Settings } from "../../types";
+import type { Job, JobStatus, ModelsResponse, Preflight, Provider, Settings } from "../../types";
 import { RUNNING, STATUS_LABEL, fmtDur } from "../../types";
 import LogViewer from "../LogViewer";
 import type { StudioMode, ViewKey } from "../AppShell";
@@ -10,6 +10,7 @@ import {
   Button, Collapse, Field, InlineError, InlineNote, Input, Kbd, Progress,
   Select, StatusBadge, Switch, cn, type StatusTone,
 } from "../ui";
+import { hostOf } from "../models/ProviderForm";
 import { variantOfModelId, type GenConfig } from "./shared";
 
 const JOB_TONE: Record<JobStatus, StatusTone> = {
@@ -33,6 +34,8 @@ const LEVEL_LABEL: Record<Preflight["level"], { label: string; tone: StatusTone 
 interface Props {
   config: GenConfig;
   onConfigChange: (v: GenConfig | ((p: GenConfig) => GenConfig)) => void;
+  /** 已启用的在线 TTS providers（接口不可用时为空数组，降级只显示本地） */
+  providers: Provider[];
   models: ModelsResponse | null;
   modelsError: string | null;
   /** /api/models 可用时才调用 activate（旧后端降级时切换在提交时生效） */
@@ -55,12 +58,15 @@ interface Props {
 }
 
 export default function ConfigPanel({
-  config, onConfigChange, models, modelsError, canActivate, settings, mode, audioDuration,
+  config, onConfigChange, providers, models, modelsError, canActivate, settings, mode, audioDuration,
   job, submitting, canSubmit, submitHint, error, preflight, preflightBusy,
   onPreflight, onSubmit, onCancel, onRetry, onNavigate,
 }: Props) {
   const [openSmall, setOpenSmall] = useState(true);
   const [activateMsg, setActivateMsg] = useState("");
+
+  const onlineProvider = providers.find((p) => p.id === config.providerId) ?? null;
+  const isOnline = !!onlineProvider;
 
   const isRunning = !!job && RUNNING.includes(job.status);
   const mainModels = models?.models.filter((m) => m.role === "main") ?? [];
@@ -97,6 +103,47 @@ export default function ConfigPanel({
         </button>
       </header>
       <div className={cn("space-y-4 p-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto", !openSmall && "hidden lg:block")}>
+        {/* 推理 Provider：本地默认；在线仅 TTS */}
+        <Field label="推理 Provider" hint={isOnline ? undefined : "本地 MLX 离线推理，支持全部模式；在线 API 仅支持文本转语音"}>
+          <Select value={onlineProvider ? config.providerId : "local"} onChange={(e) => set("providerId", e.target.value)}>
+            <option value="local">本地 MLX（默认 · 全部模式）</option>
+            {providers.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}（在线 TTS）</option>
+            ))}
+          </Select>
+        </Field>
+
+        {isOnline && onlineProvider && (
+          <div className="space-y-3">
+            <div className="space-y-2 rounded-input border border-line p-3.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <Cloud size={15} className="text-brand" aria-hidden />
+                <span className="text-sm font-semibold">{onlineProvider.name}</span>
+                <StatusBadge tone="progress" icon={<Cloud size={12} aria-hidden />}>在线 TTS</StatusBadge>
+              </div>
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[13px]">
+                <div className="min-w-0">
+                  <dt className="text-xs text-ink-3">模型</dt>
+                  <dd className="truncate font-mono text-[12.5px] font-medium" title={onlineProvider.model}>{onlineProvider.model}</dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-xs text-ink-3">音色</dt>
+                  <dd className="truncate font-mono text-[12.5px] font-medium" title={onlineProvider.voice}>{onlineProvider.voice}</dd>
+                </div>
+                <div className="col-span-2 min-w-0">
+                  <dt className="text-xs text-ink-3">服务</dt>
+                  <dd className="truncate font-mono text-[12.5px] font-medium" title={onlineProvider.base_url}>{hostOf(onlineProvider.base_url)}</dd>
+                </div>
+              </dl>
+            </div>
+            <InlineNote tone="warn">
+              文本将发送至 {onlineProvider.name}（{hostOf(onlineProvider.base_url)}），由第三方生成语音；音频文件仍存本机。
+            </InlineNote>
+          </div>
+        )}
+
+        {!isOnline && (
+        <>
         {/* 模型选择 */}
         <Field
           label="模型"
@@ -227,6 +274,8 @@ export default function ConfigPanel({
             </div>
           </div>
         </Collapse>
+        </>
+        )}
 
         {error && <InlineError>{error}</InlineError>}
 
@@ -282,7 +331,10 @@ export default function ConfigPanel({
         )}
         {submitHint && !isRunning && <p className="text-xs leading-[18px] text-warn">{submitHint}</p>}
         <p className="flex flex-wrap items-center gap-1 text-[11px] text-ink-3">
-          <Kbd>⌘</Kbd>+<Kbd>↵</Kbd> 快速提交 · 单任务串行 · 本机 MLX/Metal 推理 · 不上传云端
+          <Kbd>⌘</Kbd>+<Kbd>↵</Kbd> 快速提交 · 单任务串行 ·{" "}
+          {isOnline && onlineProvider
+            ? `在线 API（${onlineProvider.name}）· 文本发送至第三方`
+            : "本机 MLX/Metal 推理 · 不上传云端"}
         </p>
       </div>
     </section>

@@ -1,6 +1,7 @@
 import type {
   AudioMeta, Capabilities, Diagnostics, FileRef, InstallPlan, Job, ModelStatus,
-  ModelsResponse, Preflight, Settings, SystemInfo, Voice, Waveform,
+  ModelsResponse, Preflight, Provider, ProvidersResponse, ProviderTestResult,
+  Settings, SystemInfo, Voice, Waveform,
 } from "./types";
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
@@ -101,6 +102,15 @@ export const api = {
   deleteVoice: (id: string) => req<{ ok: boolean }>(`/api/voices/${id}`, { method: "DELETE" }),
   archiveVoice: (id: string, archived: boolean) =>
     req<Voice>(`/api/voices/${id}/archive`, { method: "POST", body: JSON.stringify({ archived }) }),
+
+  /* providers（本地 + 在线 TTS） */
+  providers: () => req<ProvidersResponse>("/api/providers"),
+  createProvider: (body: { name: string; kind: "openai_tts"; base_url: string; api_key: string; model: string; voice: string }) =>
+    req<Provider>("/api/providers", { method: "POST", body: JSON.stringify(body) }),
+  updateProvider: (id: string, body: Partial<{ name: string; base_url: string; api_key: string; model: string; voice: string; enabled: boolean }>) =>
+    req<Provider>(`/api/providers/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  deleteProvider: (id: string) => req<{ ok: boolean }>(`/api/providers/${id}`, { method: "DELETE" }),
+  testProvider: (id: string) => req<ProviderTestResult>(`/api/providers/${id}/test`, { method: "POST" }),
 
   /* settings */
   settings: () => req<Settings>("/api/settings"),

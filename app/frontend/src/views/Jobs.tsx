@@ -7,6 +7,7 @@ import { Eye, History, RefreshCw, Trash2 } from "lucide-react";
 import { api } from "../api";
 import type { StudioMode, ViewKey } from "../components/AppShell";
 import JobDetail from "../components/jobs/JobDetail";
+import { ProviderBadge } from "../components/models/ProviderBadge";
 import { jobKind, kindLabel, modelLabel, statusTone } from "../components/jobs/shared";
 import {
   Button,
@@ -192,7 +193,9 @@ export default function Jobs({ onNavigate }: { onNavigate: (v: ViewKey, m?: Stud
                     <td className="max-w-[220px] truncate px-3 py-3 text-ink-2" title={j.audio?.original_name ?? undefined}>
                       {j.audio?.original_name ?? "—"}
                     </td>
-                    <td className="hidden whitespace-nowrap px-3 py-3 text-ink-2 lg:table-cell">{modelLabel(j.model_variant)}</td>
+                    <td className="hidden whitespace-nowrap px-3 py-3 text-ink-2 lg:table-cell">
+                      {j.provider_id && j.provider_id !== "local" ? <ProviderBadge providerId={j.provider_id} /> : modelLabel(j.model_variant)}
+                    </td>
                     <td className="whitespace-nowrap px-3 py-3">
                       <StatusBadge tone={statusTone(j.status)}>{STATUS_LABEL[j.status]}</StatusBadge>
                     </td>

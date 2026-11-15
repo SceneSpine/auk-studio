@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -19,12 +20,13 @@ import sys
 import time
 import traceback
 from pathlib import Path
+from urllib.parse import urlparse
 
 # 离线加载 HF processor，避免网络阻塞
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
-from . import audio, config, db, model_manager, voices  # noqa: E402
+from . import audio, config, db, model_manager, providers, voices  # noqa: E402
 
 log = logging.getLogger("auk.worker")
 
@@ -239,6 +241,101 @@ def _run_model_job(job: dict, runner) -> None:
         db.worker_heartbeat(os.getpid(), current_job_id=None)
 
 
+def _candidate_ext(body: bytes, content_type: str) -> str:
+    """按响应 Content-Type 决定候选扩展名（wav/mp3）；未知类型嗅探魔数，兜底 wav。"""
+    ct = (content_type or "").lower()
+    if "mpeg" in ct or "mp3" in ct:
+        return ".mp3"
+    if "wav" in ct:
+        return ".wav"
+    if body[:3] == b"ID3" or body[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
+        return ".mp3"
+    return ".wav"
+
+
+def run_online_tts(job: dict) -> None:
+    """在线 TTS 任务（v0.3）：POST provider /audio/speech。
+
+    - 不加载本地模型、不走内存护栏；与本地任务仍串行（单 worker）。
+    - 取消：请求前检查 cancel_requested；请求中不可中断 → 阶段边界处理（同本地语义）。
+    - rtf / peak_memory_gb 记 null（非本机推理）。
+    - 失败 error 含 HTTP 状态与服务商消息，已脱敏（不含完整 key）。
+    """
+    jid = job["id"]
+    jlog, fh, stage, cancelled = _job_context(jid)
+    t_start = time.time()
+    api_key = ""
+    try:
+        stage("preparing", "校验在线 provider")
+        p = providers.get_raw(job.get("provider_id") or "")
+        if not p:
+            raise ValueError(f"Provider 不存在: {job.get('provider_id')}（可能已被删除）")
+        if not p["enabled"]:
+            raise ValueError(f"Provider「{p['name']}」已停用")
+        api_key = p.get("api_key") or ""
+        text = (job.get("target_text") or "").strip()
+        if not text:
+            raise ValueError("在线 TTS 需要 target_text")
+        base_url = providers.validate_base_url(p["base_url"])  # 运行时再校验（纵深防御）
+        host = urlparse(base_url).hostname or ""
+        if cancelled():
+            stage("cancelled", "用户在请求前取消")
+            return
+
+        stage("processing", f"在线 TTS 请求中（{p['name']} / {host}）")
+        # 隐私：日志只记 provider/model/voice 与文本长度，不记 api_key
+        jlog.info("在线 TTS: provider=%s model=%s voice=%s text_len=%d host=%s",
+                  p["name"], p["model"], p["voice"], len(text), host)
+        t_req = time.time()
+        body, ctype, _status = providers.speech_request(
+            base_url, api_key, p["model"], p["voice"], text, timeout=providers.JOB_TIMEOUT_S)
+        req_wall = time.time() - t_req
+        if not body:
+            raise providers.ProviderError("服务端返回空响应")
+        if cancelled():
+            stage("cancelled", "请求已完成，但用户请求了取消；候选仍保留")
+
+        stage("postprocessing", "保存候选音频")
+        ext = _candidate_ext(body, ctype)
+        out_path = config.OUTPUT_DIR / f"{jid}_candidate{ext}"
+        out_path.write_bytes(body)
+        meta = audio.probe(out_path)
+        dur = meta["duration"]
+        # 在线 TTS 无输入音频：注册音频记录（同 instruct_tts），使候选可存音色库 / 用作参考
+        aid = db.new_id("aud")
+        db.insert_audio({
+            "id": aid, "original_name": f"在线TTS候选-{jid[-6:]}{ext}",
+            "stored_path": str(out_path), "normalized_path": str(out_path),
+            "format": meta["format"], "sample_rate": meta["sample_rate"],
+            "channels": meta["channels"], "bit_depth": meta["bit_depth"],
+            "duration": dur, "size_bytes": out_path.stat().st_size,
+            "sha256": hashlib.sha256(body).hexdigest(),
+        })
+        fid = db.register_file(out_path, "candidate", job_id=jid, audio_id=aid, label="在线 TTS 候选（整段）")
+        db.update_job(
+            jid,
+            status="cancelled" if cancelled() else "completed",
+            stage_detail="完成",
+            output_path=str(out_path),
+            output_duration=dur,
+            elapsed_s=time.time() - t_start,
+            peak_memory_gb=None,  # 非本机推理
+            rtf=None,
+            finished_at=time.time(),
+        )
+        jlog.info("输出 %s (%.2fs @ %dHz, %s) 请求耗时 %.1fs", out_path, dur, meta["sample_rate"], ext, req_wall)
+        jlog.info("结果文件ID: %s", fid)
+    except Exception as e:  # noqa: BLE001
+        err = providers.redact(f"{type(e).__name__}: {e}", api_key)
+        jlog.error("任务失败: %s\n%s", err, traceback.format_exc())
+        db.update_job(jid, status="failed", error=err[:2000], finished_at=time.time(),
+                      elapsed_s=time.time() - t_start, stage_detail="失败")
+    finally:
+        jlog.removeHandler(fh)
+        fh.close()
+        db.worker_heartbeat(os.getpid(), current_job_id=None)
+
+
 def run_job(job: dict, holder: EngineHolder) -> None:
     kind = job.get("kind") or "infer"
     if kind == "install":
@@ -246,6 +343,10 @@ def run_job(job: dict, holder: EngineHolder) -> None:
         return
     if kind == "verify":
         _run_model_job(job, model_manager.run_verify)
+        return
+    provider_id = job.get("provider_id")
+    if provider_id and provider_id != "local":
+        run_online_tts(job)
         return
 
     jid = job["id"]

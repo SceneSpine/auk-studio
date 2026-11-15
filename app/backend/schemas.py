@@ -214,6 +214,57 @@ class VoiceArchive(BaseModel):
     archived: bool = True
 
 
+# ---------------- providers（在线 TTS） ----------------
+
+class Provider(_Base):
+    id: str
+    name: str
+    kind: str = "openai_tts"
+    base_url: str
+    model: str = ""
+    voice: str = ""
+    enabled: bool = True
+    has_key: bool = False
+    key_masked: str = ""
+    created_at: float = 0
+
+
+class LocalProvider(_Base):
+    id: str = "local"
+    name: str = "本地 MLX"
+    available: bool = False
+
+
+class ProvidersResponse(_Base):
+    providers: list[Provider] = Field(default_factory=list)
+    local: LocalProvider = Field(default_factory=LocalProvider)
+
+
+class ProviderTestResult(_Base):
+    ok: bool = False
+    latency_ms: int | None = None
+    error: str | None = None
+
+
+class ProviderCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    kind: str = Field("openai_tts", pattern="^openai_tts$")
+    base_url: str
+    api_key: str = ""
+    model: str = Field(min_length=1, max_length=200)
+    voice: str = Field(min_length=1, max_length=200)
+
+
+class ProviderUpdate(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=120)
+    kind: str | None = Field(None, pattern="^openai_tts$")
+    base_url: str | None = None
+    api_key: str | None = None  # 空串/None = 不修改
+    model: str | None = Field(None, min_length=1, max_length=200)
+    voice: str | None = Field(None, min_length=1, max_length=200)
+    enabled: bool | None = None
+
+
 # ---------------- outputs ----------------
 
 class RateBody(BaseModel):

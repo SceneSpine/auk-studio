@@ -1,6 +1,6 @@
 /** 文本转语音面板：朗读文本 + 参考音色（上传 / 音色库 / 无参考引导）。 */
 import { useEffect, useRef, useState } from "react";
-import { Check, Mic, Sparkles } from "lucide-react";
+import { Check, Cloud, Mic, Sparkles } from "lucide-react";
 import { api } from "../../api";
 import type { AudioMeta, Voice } from "../../types";
 import { fmtDur } from "../../types";
@@ -44,6 +44,9 @@ function SampleAudio({ src }: { src: string }) {
 interface Props {
   draft: TtsDraft;
   onChange: (v: TtsDraft | ((p: TtsDraft) => TtsDraft)) => void;
+  /** 在线 Provider：隐藏参考音色，音色由 provider 配置决定 */
+  isOnline?: boolean;
+  providerName?: string | null;
   refAudio: AudioMeta | null;
   onRefUploaded: (a: AudioMeta) => void;
   onClearRef: () => void;
@@ -51,7 +54,7 @@ interface Props {
   onNavigate: (v: ViewKey, m?: StudioMode) => void;
 }
 
-export default function TtsPanel({ draft, onChange, refAudio, onRefUploaded, onClearRef, onModeChange, onNavigate }: Props) {
+export default function TtsPanel({ draft, onChange, isOnline = false, providerName = null, refAudio, onRefUploaded, onClearRef, onModeChange, onNavigate }: Props) {
   const [voices, setVoices] = useState<Voice[] | null>(null);
   const [voicesError, setVoicesError] = useState("");
   const [loadingVoices, setLoadingVoices] = useState(false);
@@ -65,16 +68,20 @@ export default function TtsPanel({ draft, onChange, refAudio, onRefUploaded, onC
       .finally(() => setLoadingVoices(false));
   };
   useEffect(() => {
-    loadVoices();
+    if (!isOnline) loadVoices();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isOnline]);
 
   const selectedVoice = voices?.find((v) => v.id === draft.voiceId) ?? null;
 
   return (
     <Card title="文本转语音">
       <div className="space-y-4">
-        <Field label="朗读文本" required hint="零样本合成：文本 + 参考音色。目标时长默认按文本长度估算（不少于源时长）。">
+        <Field
+          label="朗读文本"
+          required
+          hint={isOnline ? "在线 TTS：文本发送至服务商合成语音，音色由 Provider 配置决定。" : "零样本合成：文本 + 参考音色。目标时长默认按文本长度估算（不少于源时长）。"}
+        >
           <Textarea
             rows={4}
             value={draft.text}
@@ -83,6 +90,13 @@ export default function TtsPanel({ draft, onChange, refAudio, onRefUploaded, onC
           />
         </Field>
 
+        {isOnline ? (
+          <InlineNote>
+            <Cloud size={13} className="mr-1 inline" aria-hidden />
+            使用 {providerName ?? "在线 Provider"} 配置的音色，无需参考音频。
+          </InlineNote>
+        ) : (
+        <>
         <div>
           <div className="mb-1.5 text-[13px] font-medium text-ink">参考音色</div>
           <Tabs
@@ -185,6 +199,8 @@ export default function TtsPanel({ draft, onChange, refAudio, onRefUploaded, onC
           <Mic size={13} className="mr-1 inline" aria-hidden />
           参考音色克隆需授权：请确认你对参考声音拥有合法使用权，仅在本机用于非商业研究/评估用途。
         </InlineNote>
+        </>
+        )}
       </div>
     </Card>
   );

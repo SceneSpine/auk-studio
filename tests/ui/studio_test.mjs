@@ -165,8 +165,8 @@ try {
     for (let i = 0; i < 90; i++) {
       await page.waitForTimeout(2000);
       const t = await page.locator("main").innerText();
-      if (/已完成|完成/.test(t) && !/推理中/.test(t)) { completed = true; break; }
-      if (/失败/.test(t)) break;
+      if (/已完成/.test(t) && !/生成中|推理中|排队中|准备中|加载模型/.test(t)) { completed = true; break; }
+      if (/任务失败|重试/.test(t)) break;
     }
     check("真实编辑任务完成", completed);
     await shot("23-result");
