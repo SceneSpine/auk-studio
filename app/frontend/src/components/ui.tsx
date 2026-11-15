@@ -399,10 +399,14 @@ export function Dialog({
   width?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  // onClose 用 ref 持有：避免内联回调每次渲染换身份导致 effect 重跑、
+  // 容器反复 focus() 抢走输入框焦点（输入一个字符就失焦的根因）。
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onCloseRef.current();
     };
     document.addEventListener("keydown", onKey);
     const prev = document.activeElement as HTMLElement | null;
@@ -411,7 +415,7 @@ export function Dialog({
       document.removeEventListener("keydown", onKey);
       prev?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
