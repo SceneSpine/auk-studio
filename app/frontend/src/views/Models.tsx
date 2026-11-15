@@ -161,7 +161,7 @@ export default function Models({ onNavigate }: { onNavigate: (v: ViewKey, m?: St
     <div className="space-y-5">
       <PageHeader
         title="模型管理"
-        description="安装、校验与切换本地模型；已有权重将被复用，不会重复下载。本地 MLX 支持全部模式；配置在线 TTS Provider 后，无需本地模型即可文本转语音。"
+        description="安装、校验与切换本地模型；已有权重将被复用，不会重复下载。本地 MLX 支持全部模式；配置远程 AuK 服务后，无需本地模型即可使用全部创作能力。"
         actions={
           <Button variant="outline" icon={<Wand2 size={15} />} onClick={() => onNavigate("wizard")}>
             安装向导
@@ -221,7 +221,7 @@ export default function Models({ onNavigate }: { onNavigate: (v: ViewKey, m?: St
         )}
       </Card>
 
-      {/* 推理 Provider（本地默认 + 在线 TTS） */}
+      {/* 推理 Provider（本地默认 + 远程 AuK） */}
       <Card title="推理 Provider">
         <ProviderManager />
       </Card>

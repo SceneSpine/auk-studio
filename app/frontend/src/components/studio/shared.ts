@@ -86,7 +86,7 @@ export const EMOTIONS = ["开心", "愤怒", "悲伤", "恐惧", "惊讶", "厌�
 /* ---------------- 生成配置 ---------------- */
 
 export interface GenConfig {
-  /** 推理 Provider："local" = 内置本地 MLX（默认）；其余为在线 TTS provider id */
+  /** 推理 Provider："local" = 内置本地 MLX（默认）；其余为远程 AuK 服务 id（全部模式） */
   providerId: string;
   modelVariant: "flash" | "base";
   bits: "8" | "fp32";
@@ -105,7 +105,7 @@ export const CONFIG_DEFAULTS: GenConfig = {
   nfe: "32",
 };
 
-/** provider_id 是否指向在线 Provider（null/undefined/"local" 均为本地） */
+/** provider_id 是否指向远程 AuK 服务（null/undefined/"local" 均为本地） */
 export function isOnlineProvider(id: string | null | undefined): boolean {
   return !!id && id !== "local";
 }

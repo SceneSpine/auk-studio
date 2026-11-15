@@ -207,7 +207,7 @@ export default function ResultsDrawer({
                   <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-3">
                     <span>{fmtDur(e.file.duration ?? e.job.output_duration)}</span>
                     {isOnlineProvider(e.job.provider_id) ? (
-                      <span>在线 API 生成</span>
+                      <span>远程 AuK 生成</span>
                     ) : (
                       <>
                         <span>{e.job.model_variant === "base" ? "AuK Base" : "AuK-Flash"}</span>
@@ -301,7 +301,7 @@ export default function ResultsDrawer({
                 urlB={api.fileUrl(selected.file.id)}
                 waveformA={waveform}
                 labelA={`原始 · ${audio.original_name}`}
-                labelB={`生成候选 · ${fmtDur(selected.file.duration ?? selected.job.output_duration)} · ${isOnlineProvider(selected.job.provider_id) ? "在线 API" : `${selected.job.bits ? selected.job.bits + "-bit" : "fp32"}${selected.job.seed != null ? ` · seed ${selected.job.seed}` : ""}`}`}
+                labelB={`生成候选 · ${fmtDur(selected.file.duration ?? selected.job.output_duration)} · ${isOnlineProvider(selected.job.provider_id) ? "远程 AuK" : `${selected.job.bits ? selected.job.bits + "-bit" : "fp32"}${selected.job.seed != null ? ` · seed ${selected.job.seed}` : ""}`}`}
               />
             </div>
           )}

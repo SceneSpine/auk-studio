@@ -290,7 +290,7 @@ class JobCreate(BaseModel):
     voice_id: str | None = None
     description: str = ""
     emotion: str = ""
-    provider_id: str | None = Field(None, description="null/'local'=本地 MLX；在线 provider 仅支持 mode=tts")
+    provider_id: str | None = Field(None, description="null/'local'=本地 MLX；auk_remote 支持全部 7 模式")
 
 
 EMOTIONS = ("开心", "愤怒", "悲伤", "恐惧", "惊讶", "厌恶", "平静", "兴奋")
@@ -304,10 +304,11 @@ def create_job(body: JobCreate):
     if body.kind != "infer":
         api_error(400, "invalid_kind", "install/verify 任务请通过 /api/models/{id}/install 或 /verify 创建。")
 
-    # ---- 在线 provider 分支（v0.3）：仅 tts，忽略本地参数；不走本地能力门禁 ----
+    # ---- provider 分支：auk_remote 全 7 模式放行（能力以远程实际为准，不走本地能力门禁） ----
     provider_id = (body.provider_id or "").strip() or None
     if provider_id == "local":
         provider_id = None
+    p = None
     if provider_id:
         from . import providers
 
@@ -317,26 +318,19 @@ def create_job(body: JobCreate):
         if not p["enabled"]:
             api_error(409, "provider_disabled", f"Provider「{p['name']}」已停用，请先启用",
                       {"provider_id": provider_id})
-        if body.mode != "tts":
-            raise HTTPException(400, "在线 provider 仅支持 mode=tts（编辑/音色/情绪仍为本地专属）")
-        if not body.target_text.strip():
-            raise HTTPException(400, "在线 TTS 需要 target_text")
-        host = urlparse(p["base_url"]).hostname or ""
-        job = db.insert_job({
-            "audio_id": None, "mode": "tts", "target_text": body.target_text,
-            "provider_id": provider_id, "kind": "infer",
-            "note": f"在线 TTS：文本将发送至第三方服务商 {host}（用户显式选择）",
-        })
-        return db.get_job(job["id"])
 
     if body.bits not in (None, 4, 8):
         raise HTTPException(400, "bits 仅支持 None(fp32)/4/8")
 
-    # 能力门禁（config/capabilities.json 实测判定）
-    allowed, note, _entry = capabilities.gate_mode(body.mode)
-    if not allowed:
-        api_error(400, "capability_not_supported", f"能力门禁：{body.mode} 不支持。{_entry.get('note', '')}",
-                  {"mode": body.mode, "state": _entry.get("state")})
+    if p:
+        host = urlparse(p["base_url"]).hostname or ""
+        note = f"远程 AuK：音频+文本将发送至 {host}（用户显式选择）"
+    else:
+        # 能力门禁（config/capabilities.json 实测判定）——仅本地
+        allowed, note, _entry = capabilities.gate_mode(body.mode)
+        if not allowed:
+            api_error(400, "capability_not_supported", f"能力门禁：{body.mode} 不支持。{_entry.get('note', '')}",
+                      {"mode": body.mode, "state": _entry.get("state")})
 
     audio_id = body.audio_id
     # 音色引用校验（任何带 voice_id 的任务）
@@ -397,6 +391,7 @@ def create_job(body: JobCreate):
         "seed": body.seed, "gen_seconds": body.gen_seconds, "nfe": body.nfe,
         "kind": "infer", "voice_id": body.voice_id,
         "description": body.description, "emotion": body.emotion, "note": note,
+        "provider_id": provider_id,
     })
     return db.get_job(job["id"])
 

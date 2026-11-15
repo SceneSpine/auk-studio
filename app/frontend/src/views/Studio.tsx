@@ -61,7 +61,7 @@ export default function Studio({
   const [legacyModels, setLegacyModels] = useState<ModelsResponse | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
 
-  /* 在线 TTS providers：null = 接口不可用（降级只显示本地） */
+  /* 远程 AuK 服务：null = 接口不可用（降级只显示本地） */
   const [providerList, setProviderList] = useState<Provider[] | null>(null);
   const [providersReady, setProvidersReady] = useState(false);
 
@@ -121,11 +121,11 @@ export default function Studio({
   /* TTS 参考音频（独立于主音频） */
   const [ttsRef, setTtsRef] = useState<AudioMeta | null>(null);
 
-  /* ---------------- 在线 Provider 派生状态 ---------------- */
+  /* ---------------- 远程 Provider 派生状态（auk_remote 全部模式可用） ---------------- */
   const onlineProvider = providerList?.find((p) => p.id === config.providerId) ?? null;
   const isOnline = !!onlineProvider;
 
-  /* 草稿中的在线 provider 已删除/停用/接口不可用 → 静默切回本地默认 */
+  /* 草稿中的远程 provider 已删除/停用/接口不可用 → 静默切回本地默认 */
   useEffect(() => {
     if (!providersReady || config.providerId === "local") return;
     if (!providerList?.some((p) => p.id === config.providerId)) {
@@ -133,15 +133,6 @@ export default function Studio({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [providersReady, providerList, config.providerId]);
-
-  /* 在线仅支持 TTS：选中在线时非 tts 模式自动切换 */
-  useEffect(() => {
-    if (isOnline && mode !== "tts") {
-      onModeChange("tts");
-      toast("info", "在线 API 仅支持文本转语音，已自动切换到 TTS 模式");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOnline, mode]);
 
   /* ---------------- 任务 ---------------- */
   const [jobId, setJobId] = useState<string | null>(null);
@@ -316,14 +307,10 @@ export default function Studio({
           : editDraft.customInstruction.trim() !== "";
     contentHint = editDraft.sub === "replace" ? "请填写原片段与替换文本" : editDraft.sub === "full" ? "请填写替换后的完整文本" : "请填写自由指令";
   } else if (mode === "tts") {
-    if (isOnline) {
-      contentOk = ttsDraft.text.trim() !== "";
-      contentHint = "请填写朗读文本";
-    } else {
-      const hasRef = (ttsDraft.refKind === "upload" && !!ttsRef) || (ttsDraft.refKind === "voice" && !!ttsDraft.voiceId);
-      contentOk = ttsDraft.text.trim() !== "" && hasRef;
-      contentHint = ttsDraft.text.trim() === "" ? "请填写朗读文本" : "请选择参考音频或音色库参考（无参考请改用音色设计）";
-    }
+    // 本地与远程均为零样本合成：文本 + 参考音色（远程需要参考音频上传）
+    const hasRef = (ttsDraft.refKind === "upload" && !!ttsRef) || (ttsDraft.refKind === "voice" && !!ttsDraft.voiceId);
+    contentOk = ttsDraft.text.trim() !== "" && hasRef;
+    contentHint = ttsDraft.text.trim() === "" ? "请填写朗读文本" : "请选择参考音频或音色库参考（无参考请改用音色设计）";
   } else if (mode === "design") {
     contentOk = designDraft.description.trim() !== "" && designDraft.text.trim() !== "";
     contentHint = "请填写音色描述与试听文案";
@@ -335,14 +322,15 @@ export default function Studio({
     contentHint = "请选择目标情绪";
   }
 
-  /* 在线分支：只需文本 + provider 启用，不依赖本地模型/参考音频 */
+  /* 远程分支：全部模式可用，不依赖本地模型；内容/源音频要求与本地一致 */
   const canSubmit = isOnline
-    ? contentOk && !!onlineProvider?.enabled && !isRunning && !submitting
+    ? contentOk && !!onlineProvider?.enabled && (!audioNeeded || !!audio) && !isRunning && !submitting
     : cap.state !== "not_supported" && !noMainModel && selectedReady &&
       (!audioNeeded || !!audio) && contentOk && !isRunning && !submitting;
 
   const submitHint = isOnline
-    ? !contentOk ? contentHint : null
+    ? audioNeeded && !audio ? "请先上传源音频"
+      : !contentOk ? contentHint : null
     : cap.state === "not_supported" ? "当前 MLX 分支不支持该能力，无法提交"
       : noMainModel ? "请先安装主模型（Flash / Base）"
         : !selectedReady ? "所选模型未安装，请切换模型或前往安装"
@@ -352,12 +340,10 @@ export default function Studio({
 
   /* ---------------- 提交 / 取消 / 重试 / 重做 ---------------- */
   const buildPayload = (): Record<string, unknown> | null => {
-    /* 在线：仅 provider_id + tts + 文本，不带本地参数 */
-    if (isOnline) {
-      return { kind: "infer", provider_id: config.providerId, mode: "tts", target_text: ttsDraft.text };
-    }
+    /* 远程 AuK：与本地相同的完整 payload + provider_id（音频/文本/参数由后端转发远程） */
     const common = {
       kind: "infer",
+      ...(isOnline ? { provider_id: config.providerId } : {}),
       model_variant: config.modelVariant,
       bits: config.bits === "fp32" ? null : Number(config.bits),
       sequential: config.sequential,
@@ -427,7 +413,7 @@ export default function Studio({
       setJobId(j.id);
       setJobPollActive(true);
       setDrawerOpen(true);
-      toast("info", isOnline ? "任务已提交，将由在线 API 生成（队列串行）" : "任务已提交，本机队列串行执行");
+      toast("info", isOnline ? "任务已提交，将由远程 AuK 服务生成（队列串行）" : "任务已提交，本机队列串行执行");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -515,11 +501,10 @@ export default function Studio({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  /* ---------------- 模式 Tabs（能力门禁） ---------------- */
+  /* ---------------- 模式 Tabs（能力门禁仅约束本地；远程 AuK 全模式放行，能力以远程实际为准） ---------------- */
   const tabItems = MODE_ORDER.map((m) => {
     const c = capFor(caps, m);
     const Icon = MODE_ICONS[m];
-    const onlineLocked = isOnline && m !== "tts";
     const label = (
       <span className="inline-flex items-center gap-1.5">
         <Icon size={14} aria-hidden />
@@ -528,13 +513,11 @@ export default function Studio({
     );
     return {
       key: m,
-      label: onlineLocked ? (
-        <Tooltip label="在线 API 仅支持文本转语音">{label}</Tooltip>
-      ) : c.state === "not_supported" ? (
+      label: !isOnline && c.state === "not_supported" ? (
         <Tooltip label={c.note || "当前 MLX 分支不支持该能力"}>{label}</Tooltip>
       ) : label,
-      disabled: c.state === "not_supported" || onlineLocked,
-      badge: c.state === "unverified" ? (
+      disabled: !isOnline && c.state === "not_supported",
+      badge: !isOnline && c.state === "unverified" ? (
         <StatusBadge tone="warn" className="px-1.5 py-0 text-[10px] leading-4">实验性</StatusBadge>
       ) : undefined,
     };
@@ -599,8 +582,6 @@ export default function Studio({
             <TtsPanel
               draft={ttsDraft}
               onChange={setTtsDraft}
-              isOnline={isOnline}
-              providerName={onlineProvider?.name ?? null}
               refAudio={ttsRef}
               onRefUploaded={(a) => {
                 setTtsRef(a);

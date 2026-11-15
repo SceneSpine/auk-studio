@@ -34,7 +34,7 @@ const LEVEL_LABEL: Record<Preflight["level"], { label: string; tone: StatusTone 
 interface Props {
   config: GenConfig;
   onConfigChange: (v: GenConfig | ((p: GenConfig) => GenConfig)) => void;
-  /** 已启用的在线 TTS providers（接口不可用时为空数组，降级只显示本地） */
+  /** 已启用的远程 AuK 服务（接口不可用时为空数组，降级只显示本地） */
   providers: Provider[];
   models: ModelsResponse | null;
   modelsError: string | null;
@@ -79,7 +79,8 @@ export default function ConfigPanel({
     set("modelVariant", v);
     setActivateMsg("");
     const target = mainModels.find((m) => variantOfModelId(m.id) === v);
-    if (target && target.state === "ready" && canActivate) {
+    // 远程推理不触发本地常驻模型切换
+    if (!isOnline && target && target.state === "ready" && canActivate) {
       // 切换常驻模型：worker 在当前任务结束后加载，运行中不强制卸载
       api.activateModel(target.id)
         .then((r) => setActivateMsg(r.message))
@@ -103,12 +104,12 @@ export default function ConfigPanel({
         </button>
       </header>
       <div className={cn("space-y-4 p-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto", !openSmall && "hidden lg:block")}>
-        {/* 推理 Provider：本地默认；在线仅 TTS */}
-        <Field label="推理 Provider" hint={isOnline ? undefined : "本地 MLX 离线推理，支持全部模式；在线 API 仅支持文本转语音"}>
+        {/* 推理 Provider：本地默认；远程 AuK 全部模式 */}
+        <Field label="推理 Provider" hint={isOnline ? "远程 AuK 服务：全部模式可用，模型与高级参数作用于远程" : "本地 MLX 离线推理，支持全部模式"}>
           <Select value={onlineProvider ? config.providerId : "local"} onChange={(e) => set("providerId", e.target.value)}>
             <option value="local">本地 MLX（默认 · 全部模式）</option>
             {providers.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}（在线 TTS）</option>
+              <option key={p.id} value={p.id}>{p.name}（远程 AuK）</option>
             ))}
           </Select>
         </Field>
@@ -119,35 +120,23 @@ export default function ConfigPanel({
               <div className="flex flex-wrap items-center gap-2">
                 <Cloud size={15} className="text-brand" aria-hidden />
                 <span className="text-sm font-semibold">{onlineProvider.name}</span>
-                <StatusBadge tone="progress" icon={<Cloud size={12} aria-hidden />}>在线 TTS</StatusBadge>
+                <StatusBadge tone="progress" icon={<Cloud size={12} aria-hidden />}>远程 AuK · 全部模式</StatusBadge>
               </div>
-              <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[13px]">
-                <div className="min-w-0">
-                  <dt className="text-xs text-ink-3">模型</dt>
-                  <dd className="truncate font-mono text-[12.5px] font-medium" title={onlineProvider.model}>{onlineProvider.model}</dd>
-                </div>
-                <div className="min-w-0">
-                  <dt className="text-xs text-ink-3">音色</dt>
-                  <dd className="truncate font-mono text-[12.5px] font-medium" title={onlineProvider.voice}>{onlineProvider.voice}</dd>
-                </div>
-                <div className="col-span-2 min-w-0">
-                  <dt className="text-xs text-ink-3">服务</dt>
-                  <dd className="truncate font-mono text-[12.5px] font-medium" title={onlineProvider.base_url}>{hostOf(onlineProvider.base_url)}</dd>
-                </div>
-              </dl>
+              <div className="flex items-center justify-between gap-2 text-[13px]">
+                <span className="shrink-0 text-xs text-ink-3">服务</span>
+                <span className="truncate font-mono text-[12.5px] font-medium" title={onlineProvider.base_url}>{hostOf(onlineProvider.base_url)}</span>
+              </div>
             </div>
             <InlineNote tone="warn">
-              文本将发送至 {onlineProvider.name}（{hostOf(onlineProvider.base_url)}），由第三方生成语音；音频文件仍存本机。
+              音频与文本将发送至远程 AuK 服务（{hostOf(onlineProvider.base_url)}），请确认该服务可信；输出文件仍存本机。
             </InlineNote>
           </div>
         )}
 
-        {!isOnline && (
-        <>
-        {/* 模型选择 */}
+        {/* 模型选择（本地：切换常驻模型；远程：参数作用于远程服务） */}
         <Field
           label="模型"
-          hint={config.modelVariant === "flash" ? "AuK-Flash：4 步，快，适合词级替换" : "AuK Base：编辑跟随更准，速度较慢"}
+          hint={(config.modelVariant === "flash" ? "AuK-Flash：4 步，快，适合词级替换" : "AuK Base：编辑跟随更准，速度较慢") + (isOnline ? "。参数作用于远程服务" : "")}
         >
           <Select value={config.modelVariant} onChange={(e) => changeVariant(e.target.value as "flash" | "base")}>
             {mainModels.length > 0 ? (
@@ -165,6 +154,9 @@ export default function ConfigPanel({
           </Select>
         </Field>
 
+        {/* 本地模型就绪状态（远程推理不依赖本地模型，隐藏） */}
+        {!isOnline && (
+        <>
         <div className="flex flex-wrap items-center gap-1.5">
           {selectedModel ? (
             <StatusBadge tone={selectedModel.state === "ready" ? "ready" : "warn"}>
@@ -195,6 +187,8 @@ export default function ConfigPanel({
         {modelsError && !models && (
           <InlineNote tone="warn">模型状态不可用（{modelsError}）。请确认后端服务运行中；提交仍会尝试执行。</InlineNote>
         )}
+        </>
+        )}
 
         {/* 推荐配置 */}
         <p className="rounded-input bg-subtle px-3 py-2 text-xs leading-[18px] text-ink-2">
@@ -207,7 +201,8 @@ export default function ConfigPanel({
           )}
         </p>
 
-        {/* 资源适配检查 */}
+        {/* 资源适配检查（仅本地推理；远程不占本机资源） */}
+        {!isOnline && (
         <div className="space-y-2">
           <Button size="sm" variant="outline" icon={<Gauge size={14} />} loading={preflightBusy} onClick={onPreflight} className="w-full">
             资源适配检查（提交前可选）
@@ -228,10 +223,12 @@ export default function ConfigPanel({
             </div>
           )}
         </div>
+        )}
 
-        {/* 高级参数 */}
+        {/* 高级参数（远程时作用于远程服务） */}
         <Collapse title={<span className="inline-flex items-center gap-1.5"><SlidersHorizontal size={14} aria-hidden />高级参数</span>}>
           <div className="space-y-3">
+            {isOnline && <p className="text-xs leading-[18px] text-ink-3">以下参数作用于远程服务（以远程实际能力为准）。</p>}
             <div className="grid grid-cols-2 gap-3">
               <Field label="随机种子" hint="默认 1（可复现）；留空 = 随机">
                 <Input
@@ -274,8 +271,6 @@ export default function ConfigPanel({
             </div>
           </div>
         </Collapse>
-        </>
-        )}
 
         {error && <InlineError>{error}</InlineError>}
 
@@ -333,7 +328,7 @@ export default function ConfigPanel({
         <p className="flex flex-wrap items-center gap-1 text-[11px] text-ink-3">
           <Kbd>⌘</Kbd>+<Kbd>↵</Kbd> 快速提交 · 单任务串行 ·{" "}
           {isOnline && onlineProvider
-            ? `在线 API（${onlineProvider.name}）· 文本发送至第三方`
+            ? `远程 AuK（${onlineProvider.name}）· 音频与文本发送至远程`
             : "本机 MLX/Metal 推理 · 不上传云端"}
         </p>
       </div>

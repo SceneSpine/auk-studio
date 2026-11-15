@@ -130,3 +130,23 @@ id, name, kind, base_url, api_key, model, voice, enabled INTEGER DEFAULT 1, crea
 
 ### 隐私
 在线任务 = 用户显式选择把文本发送至第三方。UI 必须显著提示目标服务商域名；默认永远 local。
+
+### Provider kind 扩展：auk_remote（远程 AuK 全能力推理）
+- kind: "openai_tts"（仅 tts）| "auk_remote"（全部 7 模式：replace/full/custom/tts/instruct_tts/timbre/emotion）。
+- auk_remote：base_url = 远程 AuK Studio 服务根地址（兼容本契约的 /api/*）；api_key 可选（Bearer，用于用户自建的反向代理鉴权）；model/voice 不使用（存空串，校验不要求）。
+- 远程服务即另一台部署了 AuK Studio 的机器（或 HF Space 上包装了本 API 契约的服务）；能力以远程实际为准。
+- test 端点：auk_remote → GET {base}/api/health（带可选 Bearer），返回 {ok,latency_ms,error?}。
+- worker run_remote_auk：
+  1) 本地输入音频（audio_id；tts 的 voice_id 解析为音频）读取 normalized wav 字节 → multipart POST {base}/api/audio/upload → 远程 audio_id；
+  2) POST {base}/api/jobs：mode/original_text/target_text/segment/instruction/description/emotion/model_variant/bits/seed/gen_seconds/nfe（不传 voice_id/provider_id）；
+  3) 轮询 GET {base}/api/jobs/{id}（1.5s，总超时 600s），期间检查 cancel_requested（请求取消则停止轮询，本地标 cancelled，远程任务尽力 POST cancel）；
+  4) GET {base}/api/jobs/{id}/result → candidate 文件 → GET {base}/api/files/{fid} 下载字节 → 存 data/outputs/{jid}_candidate.*（按 Content-Type/魔数判 wav/mp3）→ probe + 注册 candidate 与音频记录（同在线路径）；
+  5) elapsed_s=本地墙钟；rtf/peak_memory_gb=null；note 记远程 host；失败 error 脱敏（不含 key）。
+- 在线隐私：auk_remote 发送**音频+文本**；openai_tts 仅文本。UI 提示按 kind 区分。
+- jobs 路由校验：openai_tts 仍仅 tts（400）；auk_remote 全模式放行。
+
+### 产品方向定稿（v0.3）：AuK 专用
+- **移除 openai_tts**：AuK Studio 是 AuK 专用工作台，不接其他 TTS 格式（能力不一致）。
+- provider 仅两种：内置 local（MLX）+ auk_remote（远程 AuK Studio 服务，全能力）。
+- providers 的 model/voice 字段废弃（可存空串）；创建只需 name/base_url/可选 api_key。
+- 前端无 kind 选择器；「添加 Provider」= 添加远程 AuK 服务。

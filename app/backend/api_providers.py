@@ -1,4 +1,4 @@
-"""新端点：在线 TTS provider CRUD + 连通性测试（docs/API_CONTRACT.md §Provider 扩展 v0.3）。
+"""新端点：远程 AuK provider CRUD + 连通性测试（docs/API_CONTRACT.md §Provider kind 扩展：auk_remote）。
 
 响应绝不包含完整 api_key（仅 has_key + key_masked）。
 """

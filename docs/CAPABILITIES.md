@@ -47,7 +47,7 @@
 - 4-bit 量化官方明确不建议（中文退化），UI 不提供 4-bit 选项。
 ## Provider 维度（v0.3）
 
-- 上表门禁针对**本地 MLX 后端**。在线 provider（OpenAI 兼容 TTS）能力边界不同：
-  - 在线：仅 `tts`（文本转语音）；edit / instruct_tts / timbre / emotion 一律本地专属。
-  - 在线任务不做本机能力门禁（门禁是 MLX 实测概念），由服务商能力决定；UI 以 provider 类型门禁模式。
-- 默认 provider 永远为 local；在线为显式 opt-in，文本出机需界面显著提示。
+- 上表门禁针对**本地 MLX 后端**。远程 AuK provider（auk_remote）与本地能力一致：
+  - 远程：全部 7 模式（replace/full/custom/tts/instruct_tts/timbre/emotion），能力以远程服务实际为准。
+  - 远程任务不做本机能力门禁（门禁是 MLX 实测概念）；UI 对远程不做本地门禁，失败由远程返回兜底。
+- 默认 provider 永远为 local；远程为显式 opt-in，音频与文本出机需界面显著提示。AuK Studio 不接其他 TTS 格式（AuK 专用）。

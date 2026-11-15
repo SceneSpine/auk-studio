@@ -253,65 +253,157 @@ def _candidate_ext(body: bytes, content_type: str) -> str:
     return ".wav"
 
 
-def run_online_tts(job: dict) -> None:
-    """在线 TTS 任务（v0.3）：POST provider /audio/speech。
+def _register_candidate(jid: str, job: dict, body: bytes, ext: str, *,
+                        label: str, audio_name: str) -> tuple[Path, dict, str]:
+    """保存候选字节 → probe → 注册音频记录与文件（远程/在线路径共用）。
 
-    - 不加载本地模型、不走内存护栏；与本地任务仍串行（单 worker）。
-    - 取消：请求前检查 cancel_requested；请求中不可中断 → 阶段边界处理（同本地语义）。
-    - rtf / peak_memory_gb 记 null（非本机推理）。
-    - 失败 error 含 HTTP 状态与服务商消息，已脱敏（不含完整 key）。
+    任务有输入音频时复用其 audio_id（同本地）；否则新建音频记录（同 instruct_tts），
+    使候选可存音色库 / 用作参考。返回 (out_path, probe_meta, file_id)。
+    """
+    out_path = config.OUTPUT_DIR / f"{jid}_candidate{ext}"
+    out_path.write_bytes(body)
+    meta = audio.probe(out_path)
+    cand_audio_id = job.get("audio_id") or None
+    if not cand_audio_id:
+        cand_audio_id = db.new_id("aud")
+        db.insert_audio({
+            "id": cand_audio_id, "original_name": audio_name,
+            "stored_path": str(out_path), "normalized_path": str(out_path),
+            "format": meta["format"], "sample_rate": meta["sample_rate"],
+            "channels": meta["channels"], "bit_depth": meta["bit_depth"],
+            "duration": meta["duration"], "size_bytes": out_path.stat().st_size,
+            "sha256": hashlib.sha256(body).hexdigest(),
+        })
+    fid = db.register_file(out_path, "candidate", job_id=jid, audio_id=cand_audio_id, label=label)
+    return out_path, meta, fid
+
+
+# 转发给远程 AuK 的任务参数（契约 §auk_remote 步骤 2；不传 voice_id/provider_id）
+_REMOTE_JOB_FIELDS = ("original_text", "target_text", "instruction", "description", "emotion",
+                      "model_variant", "bits", "seed", "gen_seconds", "nfe")
+
+
+def _remote_cancel_best_effort(base_url: str, api_key: str, remote_jid: str, jlog) -> None:
+    """尽力 POST 远程 cancel；失败仅记日志（不影响本地取消/超时语义）。"""
+    try:
+        providers.remote_json(base_url, api_key, "POST", f"/api/jobs/{remote_jid}/cancel",
+                              payload={}, timeout=providers.CANCEL_TIMEOUT_S)
+        jlog.info("已请求远程取消: %s", remote_jid)
+    except Exception as e:  # noqa: BLE001
+        jlog.warning("远程取消失败（忽略）: %s", providers.redact(str(e), api_key))
+
+
+def run_remote_auk(job: dict) -> None:
+    """远程 AuK 全能力推理任务（契约 §auk_remote，5 步）。
+
+    1) 输入音频（normalized wav 字节）multipart 上传 → 远程 audio_id（instruct_tts 跳过）；
+    2) POST 远程 /api/jobs 创建任务；
+    3) 轮询（1.5s 间隔 / 600s 总超时）；cancel_requested → 停止并尽力远程 cancel；
+    4) 下载 candidate 字节 → 存本地 → probe + 注册（同在线路径）；
+    5) elapsed_s=本地墙钟；rtf/peak_memory_gb=null；note 记远程 host；error 脱敏。
+
+    不加载本地模型、不走内存护栏；与本地任务仍串行（单 worker）。
     """
     jid = job["id"]
     jlog, fh, stage, cancelled = _job_context(jid)
     t_start = time.time()
     api_key = ""
+    remote_jid = None
     try:
-        stage("preparing", "校验在线 provider")
+        stage("preparing", "校验远程 provider 与输入")
         p = providers.get_raw(job.get("provider_id") or "")
         if not p:
             raise ValueError(f"Provider 不存在: {job.get('provider_id')}（可能已被删除）")
         if not p["enabled"]:
             raise ValueError(f"Provider「{p['name']}」已停用")
+        if p["kind"] != providers.KIND:
+            raise ValueError(f"不支持的 provider kind: {p['kind']}（仅 {providers.KIND}）")
         api_key = p.get("api_key") or ""
-        text = (job.get("target_text") or "").strip()
-        if not text:
-            raise ValueError("在线 TTS 需要 target_text")
         base_url = providers.validate_base_url(p["base_url"])  # 运行时再校验（纵深防御）
         host = urlparse(base_url).hostname or ""
+        mode = job.get("mode") or "replace"
+
+        # 输入音频：instruct_tts 无参考音频；tts 的 voice_id 解析为音频（同本地）
+        src_bytes = None
+        if mode != "instruct_tts":
+            audio_id = job.get("audio_id")
+            if not audio_id and job.get("voice_id"):
+                ref = voices.resolve_audio(job["voice_id"])
+                audio_id = ref["id"] if ref else None
+            aud = db.get_audio(audio_id) if audio_id else None
+            if not aud:
+                raise ValueError("原始音频不存在")
+            src = aud["normalized_path"] or aud["stored_path"]
+            if not Path(src).exists():
+                raise FileNotFoundError(f"音频文件缺失: {src}")
+            src_bytes = Path(src).read_bytes()
+
+        payload = {"mode": mode, "segment": job.get("segment") or {}}
+        for k in _REMOTE_JOB_FIELDS:
+            v = job.get(k)
+            if v is not None:
+                payload[k] = v
+        # 隐私：日志只记 provider/mode/host 与文本长度，不记 api_key
+        jlog.info("远程 AuK: provider=%s mode=%s host=%s text_len=%d audio=%s",
+                  p["name"], mode, host, len(job.get("target_text") or ""),
+                  "yes" if src_bytes is not None else "no")
         if cancelled():
             stage("cancelled", "用户在请求前取消")
             return
 
-        stage("processing", f"在线 TTS 请求中（{p['name']} / {host}）")
-        # 隐私：日志只记 provider/model/voice 与文本长度，不记 api_key
-        jlog.info("在线 TTS: provider=%s model=%s voice=%s text_len=%d host=%s",
-                  p["name"], p["model"], p["voice"], len(text), host)
-        t_req = time.time()
-        body, ctype, _status = providers.speech_request(
-            base_url, api_key, p["model"], p["voice"], text, timeout=providers.JOB_TIMEOUT_S)
-        req_wall = time.time() - t_req
-        if not body:
-            raise providers.ProviderError("服务端返回空响应")
-        if cancelled():
-            stage("cancelled", "请求已完成，但用户请求了取消；候选仍保留")
+        # 1) 上传输入音频（instruct_tts 无输入音频则跳过）
+        if src_bytes is not None:
+            stage("preparing", f"上传输入音频到远程（{host}）")
+            payload["audio_id"] = providers.remote_upload_audio(base_url, api_key, src_bytes)
+            jlog.info("远程 audio_id: %s（%d 字节）", payload["audio_id"], len(src_bytes))
 
-        stage("postprocessing", "保存候选音频")
+        # 2) 创建远程任务
+        stage("processing", f"远程推理中（{p['name']} / {host}）")
+        rj = providers.remote_json(base_url, api_key, "POST", "/api/jobs", payload=payload)
+        remote_jid = rj.get("id")
+        if not remote_jid:
+            raise providers.ProviderError("远程未返回任务 id")
+        jlog.info("远程任务: %s", remote_jid)
+
+        # 3) 轮询（1.5s / 600s）；cancel_requested → 停止并尽力远程 cancel
+        deadline = time.monotonic() + providers.REMOTE_TIMEOUT_S
+        while True:
+            if cancelled():
+                _remote_cancel_best_effort(base_url, api_key, remote_jid, jlog)
+                stage("cancelled", "用户取消；已请求远程停止")
+                return
+            if time.monotonic() > deadline:
+                _remote_cancel_best_effort(base_url, api_key, remote_jid, jlog)
+                raise providers.ProviderError(
+                    f"远程任务超时（{providers.REMOTE_TIMEOUT_S:g}s，远程任务 {remote_jid}）")
+            rj = providers.remote_json(base_url, api_key, "GET", f"/api/jobs/{remote_jid}")
+            st = rj.get("status") or ""
+            if st == "completed":
+                break
+            if st in ("failed", "cancelled"):
+                raise providers.ProviderError(f"远程任务{st}: {str(rj.get('error') or '')[:500]}")
+            stage("processing", f"远程推理中（{host}：{rj.get('stage_detail') or st}）")
+            time.sleep(providers.REMOTE_POLL_S)
+
+        # 4) 下载 candidate → 存本地 → probe + 注册
+        stage("postprocessing", "下载远程候选音频")
+        result = providers.remote_json(base_url, api_key, "GET", f"/api/jobs/{remote_jid}/result")
+        files = result.get("files") or []
+        cand = next((f for f in files if f.get("kind") == "candidate"), None)
+        if not cand or not cand.get("id"):
+            raise providers.ProviderError("远程结果缺少 candidate 文件")
+        body, ctype = providers.remote_download(base_url, api_key, f"/api/files/{cand['id']}")
+        if not body:
+            raise providers.ProviderError("远程候选为空")
         ext = _candidate_ext(body, ctype)
-        out_path = config.OUTPUT_DIR / f"{jid}_candidate{ext}"
-        out_path.write_bytes(body)
-        meta = audio.probe(out_path)
+        out_path, meta, fid = _register_candidate(
+            jid, job, body, ext, label="远程 AuK 候选（整段）",
+            audio_name=f"远程候选-{jid[-6:]}{ext}")
         dur = meta["duration"]
-        # 在线 TTS 无输入音频：注册音频记录（同 instruct_tts），使候选可存音色库 / 用作参考
-        aid = db.new_id("aud")
-        db.insert_audio({
-            "id": aid, "original_name": f"在线TTS候选-{jid[-6:]}{ext}",
-            "stored_path": str(out_path), "normalized_path": str(out_path),
-            "format": meta["format"], "sample_rate": meta["sample_rate"],
-            "channels": meta["channels"], "bit_depth": meta["bit_depth"],
-            "duration": dur, "size_bytes": out_path.stat().st_size,
-            "sha256": hashlib.sha256(body).hexdigest(),
-        })
-        fid = db.register_file(out_path, "candidate", job_id=jid, audio_id=aid, label="在线 TTS 候选（整段）")
+        if cancelled():
+            stage("cancelled", "下载已完成，但用户请求了取消；候选仍保留")
+
+        # 5) 收尾：elapsed=本地墙钟；rtf/peak_memory_gb=null；note 记远程 host
         db.update_job(
             jid,
             status="cancelled" if cancelled() else "completed",
@@ -322,8 +414,10 @@ def run_online_tts(job: dict) -> None:
             peak_memory_gb=None,  # 非本机推理
             rtf=None,
             finished_at=time.time(),
+            note=f"远程 AuK：音频+文本已发送至 {host}（用户显式选择）；远程任务 {remote_jid}",
         )
-        jlog.info("输出 %s (%.2fs @ %dHz, %s) 请求耗时 %.1fs", out_path, dur, meta["sample_rate"], ext, req_wall)
+        jlog.info("输出 %s (%.2fs @ %dHz, %s) 总耗时 %.1fs",
+                  out_path, dur, meta["sample_rate"], ext, time.time() - t_start)
         jlog.info("结果文件ID: %s", fid)
     except Exception as e:  # noqa: BLE001
         err = providers.redact(f"{type(e).__name__}: {e}", api_key)
@@ -346,7 +440,7 @@ def run_job(job: dict, holder: EngineHolder) -> None:
         return
     provider_id = job.get("provider_id")
     if provider_id and provider_id != "local":
-        run_online_tts(job)
+        run_remote_auk(job)
         return
 
     jid = job["id"]

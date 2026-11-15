@@ -20,7 +20,7 @@ import { LicenseConsent } from "../components/models/LicenseConsent";
 import { InstallProgress } from "../components/models/InstallProgress";
 import { MemoryFitBadge, ModelStateBadge, PHASE_LABEL } from "../components/models/common";
 import {
-  ProviderFormFields, draftFromPreset, validateProviderDraft,
+  EMPTY_PROVIDER_DRAFT, ProviderFormFields, validateProviderDraft,
   type ProviderDraft, type ProviderErrors,
 } from "../components/models/ProviderForm";
 import { isOnlineProvider } from "../components/studio/shared";
@@ -74,9 +74,9 @@ export default function Wizard({ onNavigate }: { onNavigate: (v: ViewKey, m?: St
   const [installError, setInstallError] = useState<string | null>(null);
   const [smokeResult, setSmokeResult] = useState<FileRef[] | null>(null);
 
-  /* 在线 TTS 可选路径：配置后可跳过本地安装，烟测改用在线 provider */
+  /* 远程 AuK 可选路径：配置后可跳过本地安装，烟测改用远程服务 */
   const [providersTick, setProvidersTick] = useState(0);
-  const [onlineDraft, setOnlineDraft] = useState<ProviderDraft>(() => draftFromPreset("openai"));
+  const [onlineDraft, setOnlineDraft] = useState<ProviderDraft>(EMPTY_PROVIDER_DRAFT);
   const [onlineErrors, setOnlineErrors] = useState<ProviderErrors>({});
   const [onlineSaving, setOnlineSaving] = useState(false);
   const [onlineSaveError, setOnlineSaveError] = useState("");
@@ -191,7 +191,7 @@ export default function Wizard({ onNavigate }: { onNavigate: (v: ViewKey, m?: St
   };
 
   const saveOnlineProvider = async () => {
-    const errs = validateProviderDraft(onlineDraft, false);
+    const errs = validateProviderDraft(onlineDraft);
     setOnlineErrors(errs);
     if (Object.keys(errs).length > 0) return;
     setOnlineSaving(true);
@@ -199,14 +199,12 @@ export default function Wizard({ onNavigate }: { onNavigate: (v: ViewKey, m?: St
     try {
       await api.createProvider({
         name: onlineDraft.name.trim(),
-        kind: "openai_tts",
+        kind: "auk_remote",
         base_url: onlineDraft.baseUrl.trim(),
-        api_key: onlineDraft.apiKey.trim(),
-        model: onlineDraft.model.trim(),
-        voice: onlineDraft.voice.trim(),
+        ...(onlineDraft.apiKey.trim() ? { api_key: onlineDraft.apiKey.trim() } : {}),
       });
-      toast("success", "在线 TTS Provider 已保存，可跳过本地模型安装");
-      setOnlineDraft(draftFromPreset("openai"));
+      toast("success", "远程 AuK 服务已保存，可跳过本地模型安装");
+      setOnlineDraft(EMPTY_PROVIDER_DRAFT);
       setOnlineErrors({});
       setProvidersTick((t) => t + 1);
     } catch (e) {
@@ -219,12 +217,13 @@ export default function Wizard({ onNavigate }: { onNavigate: (v: ViewKey, m?: St
   const startSmoke = async () => {
     setSmokeResult(null);
     try {
-      // 已配置在线 API：烟测直接走在线 TTS（不依赖本地模型）
+      // 已配置远程 AuK：烟测走 instruct_tts（无需参考音频，不依赖本地模型）
       const job = smokeOnlineProvider
         ? await api.createJob({
             kind: "infer",
             provider_id: smokeOnlineProvider.id,
-            mode: "tts",
+            mode: "instruct_tts",
+            description: "一位平静自然的女性声音",
             target_text: "安装完成，开始创作吧。",
           })
         : await api.createJob({
@@ -252,7 +251,7 @@ export default function Wizard({ onNavigate }: { onNavigate: (v: ViewKey, m?: St
     }
   };
 
-  // 已配置在线 API 时，许可/下载/转换等本地步骤可跳过（本地流程本身不变）
+  // 已配置远程 AuK 服务时，许可/下载/转换等本地步骤可跳过（本地流程本身不变）
   const nextDisabled = step === 5 || (step === 2 && !alreadyReady && !consentChecked && !onlineConfigured);
   const done = new Set<number>();
   for (let i = 0; i < step; i++) done.add(i);
@@ -371,29 +370,29 @@ export default function Wizard({ onNavigate }: { onNavigate: (v: ViewKey, m?: St
               </div>
             </Card>
 
-            {/* 在线 TTS 可选路径：无需本地模型 */}
+            {/* 远程 AuK 可选路径：无需本地模型 */}
             <Collapse
               title={
                 <span className="inline-flex items-center gap-1.5">
                   <Cloud size={14} aria-hidden />
-                  在线 TTS API（可选，无需本地模型）
+                  远程 AuK 服务（可选，无需本地模型）
                 </span>
               }
               badge={onlineConfigured ? <StatusBadge tone="ready">已配置 {onlineProviders.length}</StatusBadge> : undefined}
             >
               <div className="space-y-3">
                 <p className="text-[13px] leading-5 text-ink-2">
-                  配置后可跳过本地模型安装，直接使用文本转语音。在线 Provider 仅支持 TTS，生成时文本将发送至第三方服务商。
+                  配置后可跳过本地模型安装，在远程 AuK 服务上使用全部创作能力。生成时音频与文本将发送至远程服务，请确认服务可信。
                 </p>
                 {onlineConfigured && (
                   <InlineNote>
-                    已配置：{onlineProviders.map((p) => p.name).join("、")}。可继续本地安装，也可直接前往「验证」步骤用在线 API 冒烟测试。
+                    已配置：{onlineProviders.map((p) => p.name).join("、")}。可继续本地安装，也可直接前往「验证」步骤用远程服务冒烟测试。
                   </InlineNote>
                 )}
                 <ProviderFormFields draft={onlineDraft} onChange={setOnlineDraft} errors={onlineErrors} />
                 {onlineSaveError && <InlineError>{onlineSaveError}</InlineError>}
                 <Button variant="primary" size="sm" loading={onlineSaving} onClick={saveOnlineProvider}>
-                  保存在线 Provider
+                  保存远程 AuK 服务
                 </Button>
               </div>
             </Collapse>
@@ -404,7 +403,7 @@ export default function Wizard({ onNavigate }: { onNavigate: (v: ViewKey, m?: St
         {step === 2 && (
           <div className="space-y-4">
             {onlineConfigured && (
-              <InlineNote>可跳过（已配置在线 API）：无需本地模型即可文本转语音；如需本地推理，仍请完成许可确认。</InlineNote>
+              <InlineNote>可跳过（已配置远程 AuK 服务）：无需本地模型即可使用全部能力；如需本地推理，仍请完成许可确认。</InlineNote>
             )}
             {planLoading && <Skeleton className="h-48 w-full rounded-panel" />}
             {planError && !planLoading && <InlineError onRetry={() => setPlanTick((t) => t + 1)}>无法获取许可信息：{planError}</InlineError>}
@@ -424,7 +423,7 @@ export default function Wizard({ onNavigate }: { onNavigate: (v: ViewKey, m?: St
         {step === 3 && (
           <div className="space-y-4">
             {onlineConfigured && !alreadyReady && (
-              <InlineNote>可跳过（已配置在线 API）：下载仅在使用本地 MLX 时需要，可直接前往「验证」步骤。</InlineNote>
+              <InlineNote>可跳过（已配置远程 AuK 服务）：下载仅在使用本地 MLX 时需要，可直接前往「验证」步骤。</InlineNote>
             )}
             {alreadyReady ? (
               <InlineNote>已复用本地权重，无需下载。可前往「转换」与「验证」步骤。</InlineNote>
@@ -471,7 +470,7 @@ export default function Wizard({ onNavigate }: { onNavigate: (v: ViewKey, m?: St
         {step === 4 && (
           <div className="space-y-4">
             {onlineConfigured && !alreadyReady && (
-              <InlineNote>可跳过（已配置在线 API）：转换仅在使用本地 MLX 时需要，可直接前往「验证」步骤。</InlineNote>
+              <InlineNote>可跳过（已配置远程 AuK 服务）：转换仅在使用本地 MLX 时需要，可直接前往「验证」步骤。</InlineNote>
             )}
             {alreadyReady ? (
               <InlineNote>模型已就绪，转换产物已存在，无需再次转换。</InlineNote>
@@ -521,7 +520,7 @@ export default function Wizard({ onNavigate }: { onNavigate: (v: ViewKey, m?: St
             <Card title="冒烟测试">
               <p className="mb-3 text-[13px] leading-5 text-ink-2">
                 {smokeOnlineProvider
-                  ? `已配置在线 API：将使用「${smokeOnlineProvider.name}」发送一条 TTS（朗读「安装完成，开始创作吧。」），验证连通与鉴权。文本会发送至第三方。`
+                  ? `已配置远程 AuK 服务：将使用「${smokeOnlineProvider.name}」执行一条音色设计任务（「一位平静自然的女性声音」朗读「安装完成，开始创作吧。」，无需参考音频），验证远程推理链路。文本会发送至远程服务。`
                   : "创建一个真实的描述式 TTS 任务（「一位平静自然的女性声音」朗读「安装完成，开始创作吧。」），验证整条推理链路可用。"}
               </p>
               <div className="flex flex-wrap items-center gap-2">

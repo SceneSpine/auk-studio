@@ -214,14 +214,14 @@ class VoiceArchive(BaseModel):
     archived: bool = True
 
 
-# ---------------- providers（在线 TTS） ----------------
+# ---------------- providers（远程 AuK） ----------------
 
 class Provider(_Base):
     id: str
     name: str
-    kind: str = "openai_tts"
+    kind: str = "auk_remote"
     base_url: str
-    model: str = ""
+    model: str = ""  # auk_remote 不使用，恒空串（保留字段兼容前端类型）
     voice: str = ""
     enabled: bool = True
     has_key: bool = False
@@ -248,20 +248,16 @@ class ProviderTestResult(_Base):
 
 class ProviderCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
-    kind: str = Field("openai_tts", pattern="^openai_tts$")
+    kind: str = Field("auk_remote", pattern="^auk_remote$")
     base_url: str
-    api_key: str = ""
-    model: str = Field(min_length=1, max_length=200)
-    voice: str = Field(min_length=1, max_length=200)
+    api_key: str = ""  # 可选（Bearer，用于用户自建反向代理鉴权）
 
 
 class ProviderUpdate(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=120)
-    kind: str | None = Field(None, pattern="^openai_tts$")
+    kind: str | None = Field(None, pattern="^auk_remote$")
     base_url: str | None = None
     api_key: str | None = None  # 空串/None = 不修改
-    model: str | None = Field(None, min_length=1, max_length=200)
-    voice: str | None = Field(None, min_length=1, max_length=200)
     enabled: bool | None = None
 
 

@@ -140,27 +140,22 @@ function ParamGrid({ job, providerName }: { job: Job; providerName?: string | nu
   const acceptItem = { label: "接受状态", value: job.accepted === 1 ? "已接受" : job.accepted === 0 ? "不接受" : "未评价" };
   const items: { label: string; value: ReactNode }[] =
     kind === "infer"
-      ? online
-        ? [
-            // 在线任务：本地参数不适用，只显示 Provider 与结果信息
-            { label: "推理 Provider", value: providerName ?? "在线 API" },
-            { label: "输出时长", value: fmtDur(job.output_duration) },
-            acceptItem,
-          ]
-        : [
-            { label: "模型", value: modelLabel(job.model_variant) },
-            { label: "精度", value: job.bits ? `${job.bits}-bit` : "fp32" },
-            { label: "Sequential", value: job.sequential ? "开" : "关" },
-            { label: "种子", value: job.seed != null ? String(job.seed) : "随机" },
-            { label: "目标时长", value: job.gen_seconds != null ? `${job.gen_seconds}s` : "自动" },
-            { label: "NFE 步数", value: job.nfe != null ? String(job.nfe) : "默认" },
-            { label: "峰值内存", value: job.peak_memory_gb != null ? `${job.peak_memory_gb} GB` : "—" },
-            { label: "RTF", value: job.rtf != null ? job.rtf.toFixed(2) : "—" },
-            { label: "输出时长", value: fmtDur(job.output_duration) },
-            acceptItem,
-          ]
+      ? [
+          // 远程 AuK：参数转发远程生效，与本地参数一并展示（RTF/峰值内存为远程任务时为空）
+          ...(online ? [{ label: "推理 Provider", value: providerName ?? "远程 AuK" }] : []),
+          { label: "模型", value: modelLabel(job.model_variant) },
+          { label: "精度", value: job.bits ? `${job.bits}-bit` : "fp32" },
+          { label: "Sequential", value: job.sequential ? "开" : "关" },
+          { label: "种子", value: job.seed != null ? String(job.seed) : "随机" },
+          { label: "目标时长", value: job.gen_seconds != null ? `${job.gen_seconds}s` : "自动" },
+          { label: "NFE 步数", value: job.nfe != null ? String(job.nfe) : "默认" },
+          { label: "峰值内存", value: job.peak_memory_gb != null ? `${job.peak_memory_gb} GB` : "—" },
+          { label: "RTF", value: job.rtf != null ? job.rtf.toFixed(2) : "—" },
+          { label: "输出时长", value: fmtDur(job.output_duration) },
+          acceptItem,
+        ]
       : [{ label: "目标模型", value: modelLabel(job.model_variant) }];
-  if (kind === "infer" && !online && job.voice_id) items.push({ label: "引用音色", value: job.voice_id });
+  if (kind === "infer" && job.voice_id) items.push({ label: "引用音色", value: job.voice_id });
 
   const texts: { label: string; value: string }[] = [];
   if (kind === "infer") {
@@ -184,7 +179,7 @@ function ParamGrid({ job, providerName }: { job: Job; providerName?: string | nu
           </div>
         ))}
       </dl>
-      {kind === "infer" && !online && (
+      {kind === "infer" && (
         <div>
           <div className="mb-1 text-xs text-ink-3">最终指令（final_instruction）</div>
           <p className="whitespace-pre-wrap break-words rounded-input bg-subtle px-3 py-2 font-mono text-xs leading-5 text-ink-2">

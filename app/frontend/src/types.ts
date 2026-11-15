@@ -98,10 +98,13 @@ export interface FileRef {
 
 /* ---------------- providers（本地 + 在线 TTS） ---------------- */
 
+/** AuK Studio 是 AuK 专用工作台：provider 仅本地 MLX（内置）与远程 AuK 服务。 */
+export type ProviderKind = "auk_remote";
+
 export interface Provider {
   id: string;
   name: string;
-  kind: "openai_tts";
+  kind: ProviderKind;
   base_url: string;
   model: string;
   voice: string;
