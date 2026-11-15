@@ -103,7 +103,8 @@ def _total_memory_gb() -> float:
 
 def memory_fit() -> str:
     import platform
-    if platform.machine() != "arm64":
+    # 内存适配评估仅针对本地推理（Apple Silicon + macOS 统一内存）；其余平台无意义
+    if platform.system() != "Darwin" or platform.machine() != "arm64":
         return "unknown"
     total = _total_memory_gb()
     if total >= 32:

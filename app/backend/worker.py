@@ -1,5 +1,7 @@
 """AuK 推理 worker：独立进程，单任务串行。
 
+- 跨平台启动：MLX 懒加载（启动探针失败不退出）。本地推理仅 Apple Silicon + MLX；
+  其余平台本地任务清晰失败并指引远程 provider，远程任务（auk_remote/hf_space）不受影响。
 - 从 SQLite 领取 queued 任务，调用官方 auk_mlx Python API（常驻引擎，跨任务复用）。
 - 状态机：queued → preparing → loading_model → processing → postprocessing → completed/failed/cancelled。
 - 取消：排队任务立即取消；运行中推理不可安全中断时，置 cancel_requested，
@@ -15,12 +17,16 @@ import hashlib
 import json
 import logging
 import os
-import resource
 import sys
 import time
 import traceback
 from pathlib import Path
 from urllib.parse import urlparse
+
+try:
+    import resource  # Unix 峰值内存统计；Windows 无此模块（仅本地推理路径使用）
+except ImportError:  # pragma: no cover - 仅 Windows
+    resource = None
 
 # 离线加载 HF processor，避免网络阻塞
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
@@ -29,6 +35,10 @@ os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 from . import audio, config, db, model_manager, providers, voices  # noqa: E402
 
 log = logging.getLogger("auk.worker")
+
+# 本地推理平台门禁文案（MLX 仅支持 Apple Silicon；其余平台引导远程 provider）
+LOCAL_UNSUPPORTED_MSG = ("此平台不支持本地推理（需 Apple Silicon + MLX），"
+                         "请在模型管理页配置远程 AuK 服务或 HuggingFace Space")
 
 
 def _setup_logging() -> None:
@@ -153,8 +163,43 @@ class EngineHolder:
 
 
 def _peak_rss_gb() -> float:
-    # macOS: ru_maxrss 单位为 bytes
-    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e9
+    if resource is None:  # Windows：无 resource 模块（本地推理本就不可用，兜底 0）
+        return 0.0
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    # macOS: ru_maxrss 单位为 bytes；Linux: KB
+    return rss / 1e9 if sys.platform == "darwin" else rss / 1e6
+
+
+def _try_import_mlx():
+    """尝试导入 mlx.core → (模块, 错误描述)。不抛异常；启动探针与本地任务门禁共用。
+
+    导入成功时模块已缓存于 sys.modules，重复调用开销可忽略。
+    """
+    try:
+        import mlx.core as mx
+
+        return mx, ""
+    except Exception as e:  # noqa: BLE001 - 非 Mac 平台/依赖缺失均属预期
+        return None, f"{type(e).__name__}: {e}"
+
+
+def _probe_mlx(pid: int) -> bool:
+    """启动探针：真实导入 MLX 并写心跳（mlx_available）。
+
+    失败不退出进程——非 Apple Silicon 平台无 MLX，但远程任务（auk_remote/hf_space）
+    与模型管理仍可正常运行；本地任务在 run_job 门禁处清晰失败。
+    """
+    mx, err = _try_import_mlx()
+    if mx is None:
+        log.error("MLX 不可用: %s（此平台不支持本地推理；远程任务不受影响）", err)
+        db.worker_heartbeat(pid, mlx_available=0, last_error=f"MLX 不可用: {err}")
+        return False
+    log.info("MLX %s | device=%s | metal=%s", mx.__version__, mx.default_device(), mx.metal.is_available())
+    db.worker_heartbeat(pid, mlx_available=1, mlx_version=mx.__version__,
+                        metal_available=int(mx.metal.is_available()), device=str(mx.default_device()))
+    if not mx.metal.is_available():
+        log.error("Metal 不可用！推理将不可接受地慢或失败。请运行 doctor.sh 诊断。")
+    return True
 
 
 def _job_context(jid: str):
@@ -590,6 +635,12 @@ def run_job(job: dict, holder: EngineHolder) -> None:
     jlog, fh, stage, cancelled = _job_context(jid)
     t_start = time.time()
     try:
+        # 本地推理门禁：MLX 不可用（非 Apple Silicon / 依赖缺失）→ 清晰失败并指引远程 provider。
+        # install/verify 与远程分支（上方已路由）不经过此检查，不触碰 MLX。
+        mx_mod, mlx_err = _try_import_mlx()
+        if mx_mod is None:
+            jlog.error("MLX 不可用: %s", mlx_err)
+            raise RuntimeError(LOCAL_UNSUPPORTED_MSG)
         stage("preparing", "校验输入与构造指令")
         mode = job.get("mode") or "replace"
         aud = None
@@ -710,18 +761,8 @@ def main() -> None:
     db.init_db()
     pid = os.getpid()
     log.info("worker 启动 pid=%s", pid)
-    try:
-        import mlx.core as mx
-
-        log.info("MLX %s | device=%s | metal=%s", mx.__version__, mx.default_device(), mx.metal.is_available())
-        db.worker_heartbeat(pid, mlx_version=mx.__version__, metal_available=int(mx.metal.is_available()),
-                            device=str(mx.default_device()))
-        if not mx.metal.is_available():
-            log.error("Metal 不可用！推理将不可接受地慢或失败。请运行 doctor.sh 诊断。")
-    except Exception as e:  # noqa: BLE001
-        log.error("MLX 导入失败: %s", e)
-        db.worker_heartbeat(pid, last_error=f"MLX 导入失败: {e}")
-        sys.exit(1)
+    # MLX 懒加载探针：失败不退出（非 Mac 平台仍可运行远程任务）
+    mlx_ok = _probe_mlx(pid)
 
     interrupted = db.mark_interrupted_jobs()
     if interrupted:
@@ -729,7 +770,10 @@ def main() -> None:
 
     holder = EngineHolder()
     last_job_finish = time.time()
-    db.worker_heartbeat(pid, model_loaded=0, started_at=time.time(), current_job_id=None, last_error="")
+    startup_fields = dict(model_loaded=0, started_at=time.time(), current_job_id=None)
+    if mlx_ok:
+        startup_fields["last_error"] = ""  # MLX 不可用时保留探针写入的 last_error 说明
+    db.worker_heartbeat(pid, **startup_fields)
 
     while True:
         try:

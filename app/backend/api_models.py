@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from . import db, model_manager, schemas
+from . import db, diagnostics, model_manager, schemas
 from .errors import api_error
 
 router = APIRouter(prefix="/api")
@@ -18,15 +18,8 @@ def _entry_or_404(model_id: str) -> dict:
 
 
 def _worker_alive(ws: dict) -> bool:
-    pid = ws.get("pid")
-    if not pid:
-        return False
-    try:
-        import os
-        os.kill(int(pid), 0)
-        return True
-    except (OSError, ValueError):
-        return False
+    # 跨平台存活检查（Windows 上 os.kill(pid, 0) 会无条件杀进程，见 diagnostics.pid_alive）
+    return diagnostics.pid_alive(ws.get("pid"))
 
 
 @router.get("/models", response_model=schemas.ModelsResponse)

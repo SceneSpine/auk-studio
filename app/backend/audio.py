@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -166,7 +167,9 @@ def trim(src: str | Path, dst: str | Path, start_s: float, end_s: float) -> dict
 
 
 def memory_pressure_level() -> int:
-    """macOS 内存压力等级：1=normal, 2=warn, 4=critical。失败返回 0。"""
+    """macOS 内存压力等级：1=normal, 2=warn, 4=critical。非 macOS 或失败返回 0。"""
+    if sys.platform != "darwin":
+        return 0  # 内存压力探针（sysctl）仅 macOS 存在；其余平台无此指标
     try:
         out = subprocess.run(
             ["sysctl", "-n", "kern.memorystatus_vm_pressure_level"],

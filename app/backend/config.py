@@ -16,7 +16,16 @@ DATA_DIR = _p("AUK_DATA_DIR", ROOT / "data")
 MODELS_DIR = _p("AUK_MODELS_DIR", ROOT / "models")
 LOGS_DIR = _p("AUK_LOGS_DIR", ROOT / "logs")
 AUK_REPO = _p("AUK_REPO", ROOT / "AuK")
-VENV_PYTHON = _p("AUK_VENV_PYTHON", ROOT / ".venv-auk" / "bin" / "python")
+
+
+def _default_venv_python() -> Path:
+    # venv 布局：Windows 为 Scripts/python.exe，POSIX 为 bin/python（可用 AUK_VENV_PYTHON 覆盖）
+    if os.name == "nt":
+        return ROOT / ".venv-auk" / "Scripts" / "python.exe"
+    return ROOT / ".venv-auk" / "bin" / "python"
+
+
+VENV_PYTHON = _p("AUK_VENV_PYTHON", _default_venv_python())
 
 UPLOAD_DIR = DATA_DIR / "uploads"
 JOBS_DIR = DATA_DIR / "jobs"

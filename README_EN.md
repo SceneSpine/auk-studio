@@ -50,12 +50,19 @@ More: [environment diagnostics](docs/screenshots/system.png) · [voice library](
 
 Uploads: WAV / MP3 / M4A / FLAC / OGG / AAC / AIFF / MP4 (ffmpeg fallback decoding), normalized to 24 kHz mono; originals kept read-only. Light/dark themes (light by default), Chinese UI.
 
-## Requirements
+## Requirements & cross-platform support
 
-- **Apple Silicon Mac** (tested: MacBook Pro M5 Pro, macOS 26.5.1); Metal required
-- **48 GB unified memory recommended** (8-bit resident worker peak ≈ 7.6 GB; fp32 and Base need more)
-- **≥ 60 GB free disk** (raw weights ~19 GB + MLX conversions ~28 GB)
-- Toolchain: Homebrew, Git, [uv](https://github.com/astral-sh/uv), FFmpeg, Node.js ≥ 18
+| Platform | Local inference (MLX) | Workbench + remote inference |
+| --- | --- | --- |
+| **macOS Apple Silicon** | ✅ Full capabilities | ✅ |
+| **Linux** | ⛔ No MLX | ✅ Remote AuK / HF Space |
+| **Windows** | ⛔ No MLX | ✅ (native Python or WSL2) |
+
+- **Local inference**: Apple Silicon Mac (tested: M5 Pro / macOS 26.5.1), Metal required; 48 GB unified memory recommended (8-bit resident peak ≈ 7.6 GB); ≥ 60 GB free disk (raw weights ~19 GB + conversions ~28 GB).
+- **Non-Mac (remote-inference mode)**: the workbench itself is cross-platform — the worker starts without MLX, local jobs fail with clear guidance (configure a remote provider), and remote jobs (self-hosted AuK Studio / HF Space) work fully with **zero local weights**. Linux probes read /proc, Windows reads system APIs; unavailable metrics are honestly marked "unavailable".
+- Toolchain: Git, [uv](https://github.com/astral-sh/uv) (or pip), FFmpeg, Node.js ≥ 18; Homebrew additionally on macOS.
+- Non-Mac quick start (remote mode): `uv venv --python 3.10 .venv-auk && uv pip install --python .venv-auk/bin/python fastapi "uvicorn[standard]" python-multipart soundfile soxr numpy httpx PySocks` (Windows: `.venv-auk\Scripts\python.exe`), `cd app/frontend && npm install && npm run build`, then `.venv-auk/bin/python -m app.backend.main`, open http://127.0.0.1:7860 → add an HF Space or remote AuK service on the Models page. The bash ops scripts target macOS/Linux; on Windows use WSL2 or the Python commands above.
+- Note: Linux/Windows paths are verified via simulation and mock full-chain tests; real-machine reproduction is on the pre-release checklist (docs/RELEASE_CHECKLIST.md).
 
 ## Quick start
 

@@ -78,17 +78,28 @@ class WorkerSupervisor:
     async def stop(self) -> None:
         self._stop.set()
         if self.proc and self.proc.poll() is None:
-            log.info("停止 worker (SIGINT)")
-            self.proc.send_signal(signal.SIGINT)
-            try:
-                await asyncio.get_event_loop().run_in_executor(None, self.proc.wait, 10)
-            except subprocess.TimeoutExpired:
-                log.warning("worker 未在 10s 内退出，SIGTERM")
+            if os.name == "nt":
+                # Windows：SIGINT（CTRL_C_EVENT）语义不同且跨进程组不可靠 → 直接 terminate。
+                # worker 侧的 KeyboardInterrupt 处理保留（POSIX SIGINT 路径不变）。
+                log.info("停止 worker (terminate)")
                 self.proc.terminate()
                 try:
-                    await asyncio.get_event_loop().run_in_executor(None, self.proc.wait, 5)
+                    await asyncio.get_event_loop().run_in_executor(None, self.proc.wait, 10)
                 except subprocess.TimeoutExpired:
+                    log.warning("worker 未在 10s 内退出，kill")
                     self.proc.kill()
+            else:
+                log.info("停止 worker (SIGINT)")
+                self.proc.send_signal(signal.SIGINT)
+                try:
+                    await asyncio.get_event_loop().run_in_executor(None, self.proc.wait, 10)
+                except subprocess.TimeoutExpired:
+                    log.warning("worker 未在 10s 内退出，SIGTERM")
+                    self.proc.terminate()
+                    try:
+                        await asyncio.get_event_loop().run_in_executor(None, self.proc.wait, 5)
+                    except subprocess.TimeoutExpired:
+                        self.proc.kill()
         if self._task:
             self._task.cancel()
 

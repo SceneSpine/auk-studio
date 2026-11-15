@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
-from . import audio, config, db
+from . import audio, config, db, diagnostics
 
 router = APIRouter(prefix="/api")
 
@@ -40,14 +40,8 @@ def health():
 
 
 def _worker_alive(pid: int | None) -> bool:
-    if not pid:
-        return False
-    try:
-        import os
-        os.kill(pid, 0)
-        return True
-    except OSError:
-        return False
+    # 跨平台存活检查（Windows 上 os.kill(pid, 0) 会无条件杀进程，见 diagnostics.pid_alive）
+    return diagnostics.pid_alive(pid)
 
 
 @router.get("/system")
@@ -63,8 +57,7 @@ def system():
             "processor": platform.processor(),
         },
         "memory": {
-            "total_gb": round(int(subprocess.run(["sysctl", "-n", "hw.memsize"],
-                                  capture_output=True, text=True).stdout.strip()) / 1e9, 1),
+            "total_gb": diagnostics.memory_total_gb(),
             "pressure_level": audio.memory_pressure_level(),
         },
         "disk": {"total_gb": round(disk.total / 1e9, 1), "free_gb": round(disk.free / 1e9, 1)},

@@ -50,12 +50,19 @@ AuK Studio 是运行在 Apple Silicon Mac 上的本地语音编辑与创作工�
 
 上传支持 WAV / MP3 / M4A / FLAC / OGG / AAC / AIFF / MP4（ffmpeg 回退解码），24kHz mono 标准化，原始文件只读保留。深浅色主题（默认浅色），中文界面。
 
-## 环境要求
+## 环境要求与跨平台支持
 
-- **Apple Silicon Mac**（实测 M5 Pro / macOS 26.5.1），需 Metal
-- **推荐 48GB 统一内存**（8-bit 常驻 worker 峰值约 7.6GB；fp32 与 Base 更高）
-- **磁盘 ≥ 60GB 可用**（原始权重 ~19GB + MLX 转换 ~28GB）
-- 工具链：Homebrew、Git、[uv](https://github.com/astral-sh/uv)、FFmpeg、Node.js ≥ 18
+| 平台 | 本地推理（MLX） | 工作台 + 远程推理 |
+| --- | --- | --- |
+| **macOS Apple Silicon** | ✅ 全部能力 | ✅ |
+| **Linux** | ⛔ 无 MLX | ✅ 远程 AuK / HF Space |
+| **Windows** | ⛔ 无 MLX | ✅（原生 Python 或 WSL2） |
+
+- **本地推理**：Apple Silicon Mac（实测 M5 Pro / macOS 26.5.1），需 Metal；推荐 48GB 统一内存（8-bit 常驻峰值约 7.6GB）；磁盘 ≥ 60GB（原始权重 ~19GB + 转换 ~28GB）。
+- **非 Mac（远程推理模式）**：工作台本身跨平台——worker 无 MLX 也能启动，本地任务会给出清晰引导（配置远程 provider），远程任务（自建 AuK Studio / HF Space）完全可用，**零本地权重**。Linux 探针读 /proc，Windows 读系统 API，不可得的指标如实标「不可用」。
+- 工具链：Git、[uv](https://github.com/astral-sh/uv)（或 pip）、FFmpeg、Node.js ≥ 18；macOS 另需 Homebrew。
+- 非 Mac 快速跑起来（远程模式）：`uv venv --python 3.10 .venv-auk && uv pip install --python .venv-auk/bin/python fastapi "uvicorn[standard]" python-multipart soundfile soxr numpy httpx PySocks`（Windows 用 `.venv-auk\Scripts\python.exe`），`cd app/frontend && npm install && npm run build`，然后 `.venv-auk/bin/python -m app.backend.main`，浏览器打开 http://127.0.0.1:7860 → 模型管理页添加 HF Space 或远程 AuK 服务。bash 运维脚本适用于 macOS/Linux；Windows 推荐 WSL2 或直接用上述 Python 命令。
+- 说明：Linux/Windows 路径经模拟与 mock 全链路验证，真实机器复现列入发布前核查（docs/RELEASE_CHECKLIST.md）。
 
 ## 快速开始
 

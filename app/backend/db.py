@@ -91,7 +91,8 @@ CREATE TABLE IF NOT EXISTS worker_state (
     last_error TEXT DEFAULT '',
     mlx_version TEXT DEFAULT '',
     metal_available INTEGER DEFAULT 0,
-    device TEXT DEFAULT ''
+    device TEXT DEFAULT '',
+    mlx_available INTEGER DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS control (
     id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -176,6 +177,8 @@ def init_db() -> None:
             "ALTER TABLE files ADD COLUMN rating INTEGER",
             "ALTER TABLE files ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE control ADD COLUMN activate_variant TEXT",
+            # 跨平台：MLX 可用性（worker 启动探针写入；默认 0=不可用，保守）
+            "ALTER TABLE worker_state ADD COLUMN mlx_available INTEGER DEFAULT 0",
         )
         for ddl in migrations:
             try:

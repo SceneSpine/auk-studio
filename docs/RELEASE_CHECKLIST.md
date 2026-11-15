@@ -88,7 +88,7 @@
 ## 三、剩余待办（发布前人工步骤）
 
 1. **商标/项目名冲突检索**（门禁 8）——AuK Studio 暂定名，必要时改独立品牌。
-2. **干净机器复现**——另一台 Apple Silicon Mac 走完整 setup→download→convert→start→首个任务。
+2. **干净机器复现**——另一台 Apple Silicon Mac 走完整 setup→download→convert→start→首个任务；Linux/Windows 真机验证远程推理模式（工作台启动 + HF Space/远程 AuK 任务，已经模拟与 mock 全链路验证）。
 3. **SBOM + pip-audit / npm audit**——Release 前生成并归档。
 4. （可选增强）CLI 下载器许可打印、小文件 sha256 补全、HF 备渠道 SOCKS 支持。
 5. （商业化时）Qwen 书面授权或兼容替代方案 + 法务复审。
