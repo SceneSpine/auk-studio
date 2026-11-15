@@ -150,3 +150,14 @@ id, name, kind, base_url, api_key, model, voice, enabled INTEGER DEFAULT 1, crea
 - provider 仅两种：内置 local（MLX）+ auk_remote（远程 AuK Studio 服务，全能力）。
 - providers 的 model/voice 字段废弃（可存空串）；创建只需 name/base_url/可选 api_key。
 - 前端无 kind 选择器；「添加 Provider」= 添加远程 AuK 服务。
+
+### Provider kind 扩展：hf_space（HuggingFace AuK Space，Gradio 6 协议）
+- 官方 Space `tencent/AuK`（https://tencent-auk.hf.space）RUNNING，暴露 /run_generate_with_pe，**全能力**（与本地同一指令模板）。
+- kind: "auk_remote" | "hf_space"；hf_space 字段：name/base_url（Space 根地址）/api_key 可选（HF token，Bearer）。
+- 参数映射：use_pe=false（用实测模板，禁 PE 改写）；variant: flash→"AuK-Flash ⚡" / base→"AuK (Base)"；audio=FileData{path,meta:{_type:"gradio.FileData"}}|null；instruction=build_instruction 同本地；gen_seconds 钳制 0–30（0=自动）；nfe: flash=4/base=job.nfe；cfg: flash=0/base=2.0；seed=job.seed||42。
+- 协议：1) 有音频→POST {base}/gradio_api/upload（multipart files）→[path]；2) POST {base}/gradio_api/call/generate_with_pe {"data":[...8参]}→{event_id}；3) GET {base}/gradio_api/call/generate_with_pe/{event_id}（SSE）→ process_completed 的 output.data[0]=FileData；4) 下载 url（或 {base}/gradio_api/file={path}）→ 存本地+注册。
+- **代理必需**：HF 国内直连不通，hf_space 请求必须支持 HF_PROXY/AUK_SOCKS_PROXY 环境变量（SOCKS5，PySocks 已装）；auk_remote 同样可选支持。
+- test 端点：GET {base}/gradio_api/info → 含 /run_generate_with_pe 即 ok。
+- 超时 600s（共享 Space 有排队与冷启动）；取消=中断 SSE/轮询。
+- 隐私：音频+文本发送至 HF Space（共享演示服务）；Qwen Research License 非商用约束同样适用。
+- 前端：provider 类型二选一（自建 AuK Studio / HF Space），hf_space 预设官方 Space；全模式；徽章「HF Space · name」。

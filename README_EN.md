@@ -43,7 +43,7 @@ More: [environment diagnostics](docs/screenshots/system.png) · [voice library](
 | Voice library | ✅ Supported | Local-private reference voices with mandatory consent records |
 | A/B comparison & accept | ✅ Supported | Candidate audition, accept marking, rating / favorite, WAV download |
 | Splice export | ✅ Supported | Unmodified regions keep the **original PCM** (bit-exact), raised-cosine crossfade |
-| Remote AuK inference providers | ✅ Supported | Add a remote AuK Studio service on the Models page, pick at generation time; **full capabilities** (edit / TTS / timbre / emotion), audio + text sent to the remote (explicit choice, local by default) |
+| Remote AuK inference providers | ✅ Supported | Self-hosted AuK Studio service or **HuggingFace Space** (official tencent/AuK one-click preset), pick at generation time; **full capabilities** (edit / TTS / timbre / emotion), audio + text sent to the remote (explicit choice, local by default) |
 | Denoise / dereverb (speech enhancement) | ⛔ Not supported | Not implemented in the MLX branch |
 | Source separation | ⛔ Not supported | Not implemented in the MLX branch |
 | ASR / forced alignment in the workbench | ⛔ Not supported | Transcripts are entered manually (offline ASR is used only by dev verification scripts) |
@@ -121,15 +121,17 @@ python3 scripts/download_models.py --only base
 AuK Studio is an **AuK-dedicated workbench**: inference happens either on your machine or on a remote AuK service — same capabilities either way.
 
 - **Local MLX is the default**: with no remote configured, everything runs on-device and no data leaves your machine.
-- **Remote AuK (optional)**: under Models → "Inference Providers", add another AuK Studio deployment (name / base URL / optional auth token) with a one-click connectivity test. The setup wizard can configure it too — once set, you may skip local model installation. Useful when your machine isn't Apple Silicon or you want inference on a GPU server (deploy the remote AuK Studio yourself, ideally behind an authenticating reverse proxy).
-- Pick the provider in the generation config panel. **Remote has the same capabilities as local** (edit / TTS / voice design / timbre / emotion); model and advanced parameters apply to the remote service. Selecting a remote shows a prominent notice: "audio and text will be sent to the remote AuK service (domain)".
-- Auth tokens are stored only in the local database and masked everywhere in UI/logs. Remote tasks are always an explicit user choice, never the default.
+- **Remote AuK (optional, two transports)**: under Models → "Inference Providers", with a one-click connectivity test. The setup wizard can configure it too — once set, you may skip local model installation.
+  - **AuK Studio service (self-hosted)**: another AuK Studio deployment (name / base URL / optional auth token). For your own GPU server, ideally behind an authenticating reverse proxy.
+  - **HuggingFace Space**: official `tencent/AuK` one-click preset (or community/self-hosted AuK Gradio Spaces). **Zero deployment** with full capabilities; note the official Space is a shared free demo — expect queues, cold starts, occasional unavailability, no SLA.
+- Pick the provider in the generation config panel. **Remote has the same capabilities as local** (edit / TTS / voice design / timbre / emotion); model and advanced parameters apply to the remote service. Selecting a remote shows a prominent notice naming the target service.
+- Auth tokens are stored only in the local database and masked everywhere in UI/logs. Remote tasks are always an explicit user choice, never the default. If HuggingFace needs a proxy, set `HF_PROXY` (loopback addresses bypass the proxy automatically).
 
 ## Privacy
 
 - Server binds to **127.0.0.1 only**; the local API is unauthenticated by design — **never expose it to the public internet** (see [SECURITY.md](SECURITY.md)).
 - **In local mode, no audio, voice templates, or telemetry leave your machine.** Outbound traffic is limited to user-initiated model/package downloads from official sources.
-- **When a remote AuK service is selected, source audio and text are sent to that remote service** (the UI prominently shows the target domain); generated audio files are still stored locally. The remote is your own or a trusted AuK deployment, not a third-party TTS platform.
+- **When a remote AuK service is selected, source audio and text are sent to that remote service** (the UI prominently shows the target domain); generated audio files are still stored locally. The remote is your own/trusted AuK deployment or an official/community AuK HuggingFace Space — not a third-party TTS platform. The Qwen Research License non-commercial restriction applies to remote inference as well.
 - Uploads stored under random IDs in `data/`; originals read-only; downloads confined to the data directory.
 
 ## License

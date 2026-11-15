@@ -98,8 +98,8 @@ export interface FileRef {
 
 /* ---------------- providers（本地 + 在线 TTS） ---------------- */
 
-/** AuK Studio 是 AuK 专用工作台：provider 仅本地 MLX（内置）与远程 AuK 服务。 */
-export type ProviderKind = "auk_remote";
+/** AuK Studio 是 AuK 专用工作台：本地 MLX（内置）/ 自建远程 AuK Studio / HF Space（Gradio）。 */
+export type ProviderKind = "auk_remote" | "hf_space";
 
 export interface Provider {
   id: string;

@@ -1,6 +1,6 @@
 /** 生成配置（右栏 35%）：模型选择 + 资源适配 + 高级参数 + 提交/取消 + 任务进度与日志。 */
 import { useState } from "react";
-import { ChevronDown, Cloud, Gauge, RotateCcw, SlidersHorizontal, Sparkles, Square } from "lucide-react";
+import { ChevronDown, Cloud, FlaskConical, Gauge, RotateCcw, SlidersHorizontal, Sparkles, Square } from "lucide-react";
 import { api } from "../../api";
 import type { Job, JobStatus, ModelsResponse, Preflight, Provider, Settings } from "../../types";
 import { RUNNING, STATUS_LABEL, fmtDur } from "../../types";
@@ -10,7 +10,7 @@ import {
   Button, Collapse, Field, InlineError, InlineNote, Input, Kbd, Progress,
   Select, StatusBadge, Switch, cn, type StatusTone,
 } from "../ui";
-import { hostOf } from "../models/ProviderForm";
+import { PROVIDER_KIND_LABEL, hostOf } from "../models/ProviderForm";
 import { variantOfModelId, type GenConfig } from "./shared";
 
 const JOB_TONE: Record<JobStatus, StatusTone> = {
@@ -104,12 +104,21 @@ export default function ConfigPanel({
         </button>
       </header>
       <div className={cn("space-y-4 p-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto", !openSmall && "hidden lg:block")}>
-        {/* 推理 Provider：本地默认；远程 AuK 全部模式 */}
-        <Field label="推理 Provider" hint={isOnline ? "远程 AuK 服务：全部模式可用，模型与高级参数作用于远程" : "本地 MLX 离线推理，支持全部模式"}>
+        {/* 推理 Provider：本地默认；远程服务（远程 AuK / HF Space）全部模式 */}
+        <Field
+          label="推理 Provider"
+          hint={
+            isOnline
+              ? onlineProvider?.kind === "hf_space"
+                ? "HF Space：全部模式可用，模型与高级参数作用于远程（共享演示，可能排队/冷启动）"
+                : "远程 AuK 服务：全部模式可用，模型与高级参数作用于远程"
+              : "本地 MLX 离线推理，支持全部模式"
+          }
+        >
           <Select value={onlineProvider ? config.providerId : "local"} onChange={(e) => set("providerId", e.target.value)}>
             <option value="local">本地 MLX（默认 · 全部模式）</option>
             {providers.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}（远程 AuK）</option>
+              <option key={p.id} value={p.id}>{p.name}（{PROVIDER_KIND_LABEL[p.kind]}）</option>
             ))}
           </Select>
         </Field>
@@ -118,9 +127,16 @@ export default function ConfigPanel({
           <div className="space-y-3">
             <div className="space-y-2 rounded-input border border-line p-3.5">
               <div className="flex flex-wrap items-center gap-2">
-                <Cloud size={15} className="text-brand" aria-hidden />
+                {onlineProvider.kind === "hf_space"
+                  ? <FlaskConical size={15} className="text-brand" aria-hidden />
+                  : <Cloud size={15} className="text-brand" aria-hidden />}
                 <span className="text-sm font-semibold">{onlineProvider.name}</span>
-                <StatusBadge tone="progress" icon={<Cloud size={12} aria-hidden />}>远程 AuK · 全部模式</StatusBadge>
+                <StatusBadge
+                  tone="progress"
+                  icon={onlineProvider.kind === "hf_space" ? <FlaskConical size={12} aria-hidden /> : <Cloud size={12} aria-hidden />}
+                >
+                  {PROVIDER_KIND_LABEL[onlineProvider.kind]} · 全部模式
+                </StatusBadge>
               </div>
               <div className="flex items-center justify-between gap-2 text-[13px]">
                 <span className="shrink-0 text-xs text-ink-3">服务</span>
@@ -128,7 +144,9 @@ export default function ConfigPanel({
               </div>
             </div>
             <InlineNote tone="warn">
-              音频与文本将发送至远程 AuK 服务（{hostOf(onlineProvider.base_url)}），请确认该服务可信；输出文件仍存本机。
+              {onlineProvider.kind === "hf_space"
+                ? <>音频与文本将发送至该 HuggingFace Space（{hostOf(onlineProvider.base_url)}）：共享演示服务，可能排队或冷启动；输出文件仍存本机。</>
+                : <>音频与文本将发送至远程 AuK 服务（{hostOf(onlineProvider.base_url)}），请确认该服务可信；输出文件仍存本机。</>}
             </InlineNote>
           </div>
         )}
@@ -328,7 +346,7 @@ export default function ConfigPanel({
         <p className="flex flex-wrap items-center gap-1 text-[11px] text-ink-3">
           <Kbd>⌘</Kbd>+<Kbd>↵</Kbd> 快速提交 · 单任务串行 ·{" "}
           {isOnline && onlineProvider
-            ? `远程 AuK（${onlineProvider.name}）· 音频与文本发送至远程`
+            ? `${PROVIDER_KIND_LABEL[onlineProvider.kind]}（${onlineProvider.name}）· 音频与文本发送至远程`
             : "本机 MLX/Metal 推理 · 不上传云端"}
         </p>
       </div>

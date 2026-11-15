@@ -430,6 +430,145 @@ def run_remote_auk(job: dict) -> None:
         db.worker_heartbeat(os.getpid(), current_job_id=None)
 
 
+def run_hf_space(job: dict) -> None:
+    """HF Space（HuggingFace AuK Space，Gradio 6）全能力推理任务（契约 §hf_space）。
+
+    1) 有输入音频（normalized wav）→ POST /gradio_api/upload → FileData{path,meta}；
+       instruct_tts 无音频 → audio=null；
+    2) POST /gradio_api/call/generate_with_pe {"data":[use_pe,variant,audio,instruction,
+       gen_seconds,nfe,cfg,seed]} → event_id；
+    3) GET SSE 读到 process_completed（总超时 600s，cancel_requested 中断）；
+    4) 下载 output.data[0] 音频 → 存本地 → probe + 注册（复用 _register_candidate）；
+    5) elapsed_s=本地墙钟；rtf/peak_memory_gb=null；note 记 Space host；error 脱敏。
+
+    指令用 build_instruction（同本地模板）；use_pe=false（禁 PE 改写）。
+    不加载本地模型、不走内存护栏；与本地任务仍串行（单 worker）。
+    """
+    jid = job["id"]
+    jlog, fh, stage, cancelled = _job_context(jid)
+    t_start = time.time()
+    api_key = ""
+    event_id = None
+    try:
+        stage("preparing", "校验 HF Space provider 与输入")
+        p = providers.get_raw(job.get("provider_id") or "")
+        if not p:
+            raise ValueError(f"Provider 不存在: {job.get('provider_id')}（可能已被删除）")
+        if not p["enabled"]:
+            raise ValueError(f"Provider「{p['name']}」已停用")
+        if p["kind"] != providers.KIND_HF_SPACE:
+            raise ValueError(f"不支持的 provider kind: {p['kind']}（仅 {providers.KIND_HF_SPACE}）")
+        api_key = p.get("api_key") or ""
+        base_url = providers.validate_base_url(p["base_url"])  # 运行时再校验（纵深防御）
+        host = urlparse(base_url).hostname or ""
+        mode = job.get("mode") or "replace"
+        proxy_cfg = providers.resolve_proxy()  # 非法代理 → ValueError → failed（消息已脱敏）
+
+        # 指令：与本地同一模板（禁 PE 改写，use_pe=false）
+        instruction = build_instruction(job)
+        db.update_job(jid, final_instruction=instruction)
+
+        # 输入音频：instruct_tts 无参考音频；tts 的 voice_id 解析为音频（同本地）
+        src_bytes = None
+        if mode != "instruct_tts":
+            audio_id = job.get("audio_id")
+            if not audio_id and job.get("voice_id"):
+                ref = voices.resolve_audio(job["voice_id"])
+                audio_id = ref["id"] if ref else None
+            aud = db.get_audio(audio_id) if audio_id else None
+            if not aud:
+                raise ValueError("原始音频不存在")
+            src = aud["normalized_path"] or aud["stored_path"]
+            if not Path(src).exists():
+                raise FileNotFoundError(f"音频文件缺失: {src}")
+            src_bytes = Path(src).read_bytes()
+
+        # 参数映射（契约 §hf_space）
+        variant = job.get("model_variant") or "flash"
+        variant_label = "AuK-Flash ⚡" if variant == "flash" else "AuK (Base)"
+        gs = job.get("gen_seconds")
+        gen_seconds = 0.0 if gs is None else max(0.0, min(30.0, float(gs)))  # 钳制 0–30，None→0 自动
+        nfe = 4 if variant == "flash" else (job.get("nfe") or 32)
+        cfg = 0 if variant == "flash" else 2.0
+        seed = job.get("seed") or 42
+
+        # 隐私：日志只记 provider/mode/host/variant 与文本长度，不记 api_key/代理凭据
+        jlog.info("HF Space: provider=%s mode=%s host=%s variant=%s text_len=%d audio=%s proxy=%s",
+                  p["name"], mode, host, variant, len(job.get("target_text") or ""),
+                  "yes" if src_bytes is not None else "no", providers.proxy_desc(proxy_cfg))
+        if cancelled():
+            db.update_job(jid, status="cancelled", stage_detail="用户在请求前取消",
+                          finished_at=time.time(), elapsed_s=time.time() - t_start)
+            return
+
+        deadline = time.monotonic() + providers.GRADIO_TIMEOUT_S
+
+        # 1) 上传输入音频（instruct_tts 无输入音频 → audio=null）
+        audio_fd = None
+        if src_bytes is not None:
+            stage("preparing", f"上传输入音频到 HF Space（{host}）")
+            up_path = providers.gradio_upload(base_url, api_key, src_bytes)
+            audio_fd = {"path": up_path, "meta": {"_type": "gradio.FileData"}}
+            jlog.info("HF Space 上传 path: %s（%d 字节）", up_path, len(src_bytes))
+
+        # 2) 创建 Gradio 调用（8 参，顺序固定）
+        data_array = [False, variant_label, audio_fd, instruction, gen_seconds, nfe, cfg, seed]
+        stage("processing", f"HF Space 推理中（{p['name']} / {host}）")
+        event_id = providers.gradio_call(base_url, api_key, data_array)
+        jlog.info("HF Space event_id: %s", event_id)
+
+        # 3) SSE 读到 process_completed（总超时 600s；cancel_requested 中断）
+        def _on_event(name: str, _data: str) -> None:
+            if name and name != "heartbeat":
+                stage("processing", f"HF Space 推理中（{host}：{name}）")
+
+        remaining = max(1.0, deadline - time.monotonic())
+        filedata = providers.gradio_sse_wait(base_url, api_key, event_id,
+                                             total_timeout=remaining, cancelled=cancelled,
+                                             on_event=_on_event)
+
+        # 4) 下载候选 → 存本地 → probe + 注册
+        stage("postprocessing", "下载 HF Space 候选音频")
+        body, ctype = providers.gradio_download(base_url, api_key, filedata)
+        if not body:
+            raise providers.ProviderError("HF Space 候选为空")
+        ext = _candidate_ext(body, ctype)
+        out_path, meta, fid = _register_candidate(
+            jid, job, body, ext, label="HF Space 候选（整段）",
+            audio_name=f"HF候选-{jid[-6:]}{ext}")
+        dur = meta["duration"]
+
+        # 5) 收尾：elapsed=本地墙钟；rtf/peak_memory_gb=null；note 记 Space host
+        db.update_job(
+            jid,
+            status="cancelled" if cancelled() else "completed",
+            stage_detail="完成",
+            output_path=str(out_path),
+            output_duration=dur,
+            elapsed_s=time.time() - t_start,
+            peak_memory_gb=None,  # 非本机推理
+            rtf=None,
+            finished_at=time.time(),
+            note=f"HF Space：音频+文本已发送至 {host}（共享演示服务，用户显式选择）；event {event_id}",
+        )
+        jlog.info("输出 %s (%.2fs @ %dHz, %s) 总耗时 %.1fs",
+                  out_path, dur, meta["sample_rate"], ext, time.time() - t_start)
+        jlog.info("结果文件ID: %s", fid)
+    except providers.GradioCancelled:
+        jlog.info("任务取消：用户中断 HF Space SSE（event %s）", event_id)
+        db.update_job(jid, status="cancelled", stage_detail="已取消（中断 HF Space SSE）",
+                      finished_at=time.time(), elapsed_s=time.time() - t_start)
+    except Exception as e:  # noqa: BLE001
+        err = providers.redact(f"{type(e).__name__}: {e}", api_key)
+        jlog.error("任务失败: %s\n%s", err, traceback.format_exc())
+        db.update_job(jid, status="failed", error=err[:2000], finished_at=time.time(),
+                      elapsed_s=time.time() - t_start, stage_detail="失败")
+    finally:
+        jlog.removeHandler(fh)
+        fh.close()
+        db.worker_heartbeat(os.getpid(), current_job_id=None)
+
+
 def run_job(job: dict, holder: EngineHolder) -> None:
     kind = job.get("kind") or "infer"
     if kind == "install":
@@ -440,7 +579,11 @@ def run_job(job: dict, holder: EngineHolder) -> None:
         return
     provider_id = job.get("provider_id")
     if provider_id and provider_id != "local":
-        run_remote_auk(job)
+        p = providers.get_raw(provider_id)
+        if p and p.get("kind") == providers.KIND_HF_SPACE:
+            run_hf_space(job)
+        else:
+            run_remote_auk(job)
         return
 
     jid = job["id"]

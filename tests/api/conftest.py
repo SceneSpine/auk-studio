@@ -24,6 +24,9 @@ os.environ["AUK_LOGS_DIR"] = str(_TMP / "logs")
 os.environ.pop("AUK_CAPABILITIES_FILE", None)
 os.environ.pop("AUK_MODELS_REGISTRY", None)
 os.environ.pop("AUK_MODEL_MANIFEST", None)
+# 代理默认关闭：避免测试意外走真实 SOCKS 代理（代理用例用 monkeypatch 显式设置）
+os.environ.pop("HF_PROXY", None)
+os.environ.pop("AUK_SOCKS_PROXY", None)
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 

@@ -24,7 +24,7 @@ import {
 } from "../ui";
 import JobLog from "./JobLog";
 import { INSTALL_PHASE_LABEL, jobKind, kindLabel, modelLabel, statusTone } from "./shared";
-import { ProviderBadge, useProviderNames } from "../models/ProviderBadge";
+import { ProviderBadge, useProviderMap } from "../models/ProviderBadge";
 import { isOnlineProvider } from "../studio/shared";
 
 const INFER_STAGES: { key: JobStatus; label: string }[] = [
@@ -247,7 +247,7 @@ export default function JobDetail({
   const [tick, setTick] = useState(0);
   const [busy, setBusy] = useState<"cancel" | "retry" | "accept" | "delete" | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const providerNames = useProviderNames();
+  const providerMap = useProviderMap();
 
   /* 运行中 2.5s 轮询；终态降频到 60s（首次仍立即拉取） */
   const [pollMs, setPollMs] = useState(2500);
@@ -443,7 +443,7 @@ export default function JobDetail({
             {/* 参数 */}
             <section>
               <h4 className="mb-2 text-[13px] font-semibold">参数</h4>
-              <ParamGrid job={j} providerName={j.provider_id ? providerNames?.get(j.provider_id) ?? null : null} />
+              <ParamGrid job={j} providerName={j.provider_id ? providerMap?.get(j.provider_id)?.name ?? null : null} />
             </section>
 
             {/* 输入音频 */}

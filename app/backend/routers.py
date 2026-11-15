@@ -290,7 +290,7 @@ class JobCreate(BaseModel):
     voice_id: str | None = None
     description: str = ""
     emotion: str = ""
-    provider_id: str | None = Field(None, description="null/'local'=本地 MLX；auk_remote 支持全部 7 模式")
+    provider_id: str | None = Field(None, description="null/'local'=本地 MLX；auk_remote / hf_space 支持全部 7 模式")
 
 
 EMOTIONS = ("开心", "愤怒", "悲伤", "恐惧", "惊讶", "厌恶", "平静", "兴奋")
@@ -304,7 +304,7 @@ def create_job(body: JobCreate):
     if body.kind != "infer":
         api_error(400, "invalid_kind", "install/verify 任务请通过 /api/models/{id}/install 或 /verify 创建。")
 
-    # ---- provider 分支：auk_remote 全 7 模式放行（能力以远程实际为准，不走本地能力门禁） ----
+    # ---- provider 分支：auk_remote / hf_space 全 7 模式放行（能力以远程实际为准，不走本地能力门禁） ----
     provider_id = (body.provider_id or "").strip() or None
     if provider_id == "local":
         provider_id = None
@@ -324,7 +324,10 @@ def create_job(body: JobCreate):
 
     if p:
         host = urlparse(p["base_url"]).hostname or ""
-        note = f"远程 AuK：音频+文本将发送至 {host}（用户显式选择）"
+        if p["kind"] == providers.KIND_HF_SPACE:
+            note = f"HF Space：音频+文本将发送至 {host}（共享演示服务，用户显式选择）"
+        else:
+            note = f"远程 AuK：音频+文本将发送至 {host}（用户显式选择）"
     else:
         # 能力门禁（config/capabilities.json 实测判定）——仅本地
         allowed, note, _entry = capabilities.gate_mode(body.mode)

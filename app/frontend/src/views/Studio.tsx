@@ -121,7 +121,7 @@ export default function Studio({
   /* TTS 参考音频（独立于主音频） */
   const [ttsRef, setTtsRef] = useState<AudioMeta | null>(null);
 
-  /* ---------------- 远程 Provider 派生状态（auk_remote 全部模式可用） ---------------- */
+  /* ---------------- 远程 Provider 派生状态（auk_remote / hf_space 均全部模式可用） ---------------- */
   const onlineProvider = providerList?.find((p) => p.id === config.providerId) ?? null;
   const isOnline = !!onlineProvider;
 
@@ -413,7 +413,14 @@ export default function Studio({
       setJobId(j.id);
       setJobPollActive(true);
       setDrawerOpen(true);
-      toast("info", isOnline ? "任务已提交，将由远程 AuK 服务生成（队列串行）" : "任务已提交，本机队列串行执行");
+      toast(
+        "info",
+        isOnline
+          ? onlineProvider?.kind === "hf_space"
+            ? "任务已提交，将由 HF Space 生成（共享演示，可能排队或冷启动）"
+            : "任务已提交，将由远程 AuK 服务生成（队列串行）"
+          : "任务已提交，本机队列串行执行",
+      );
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -501,7 +508,7 @@ export default function Studio({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  /* ---------------- 模式 Tabs（能力门禁仅约束本地；远程 AuK 全模式放行，能力以远程实际为准） ---------------- */
+  /* ---------------- 模式 Tabs（能力门禁仅约束本地；远程服务全模式放行，能力以远程实际为准） ---------------- */
   const tabItems = MODE_ORDER.map((m) => {
     const c = capFor(caps, m);
     const Icon = MODE_ICONS[m];

@@ -39,7 +39,7 @@ try {
   const dlg = page.locator('[role="dialog"]');
   check("添加远程服务弹窗", await dlg.isVisible());
   const dlgText = await dlg.innerText();
-  check("无 OpenAI 预设/类型选择", !/OpenAI|硅基|预设|类型/.test(dlgText));
+  check("无 OpenAI/硅基等非 AuK 预设", !/OpenAI|硅基|SiliconFlow/.test(dlgText));
   const inputs = dlg.locator("input");
   await inputs.nth(0).fill("远程 AuK 测试");
   await inputs.nth(1).fill(REMOTE);

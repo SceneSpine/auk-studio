@@ -105,7 +105,7 @@ export const api = {
 
   /* providers（本地 + 在线 TTS） */
   providers: () => req<ProvidersResponse>("/api/providers"),
-  createProvider: (body: { name: string; kind: "auk_remote"; base_url: string; api_key?: string }) =>
+  createProvider: (body: { name: string; kind: import("./types").ProviderKind; base_url: string; api_key?: string }) =>
     req<Provider>("/api/providers", { method: "POST", body: JSON.stringify(body) }),
   updateProvider: (id: string, body: Partial<{ name: string; base_url: string; api_key: string; model: string; voice: string; enabled: boolean }>) =>
     req<Provider>(`/api/providers/${id}`, { method: "PUT", body: JSON.stringify(body) }),
